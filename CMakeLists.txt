@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(AIRelayBench VERSION 1.1.0 LANGUAGES CXX)
+project(AIRelayBench VERSION 1.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,6 +49,10 @@ qt_add_executable(ai-relay-bench WIN32
     src/ui/TitleBar.cpp
     src/ui/SettingsDialog.h
     src/ui/SettingsDialog.cpp
+    src/ui/ScanDialog.h
+    src/ui/ScanDialog.cpp
+    src/ui/CompareDialog.h
+    src/ui/CompareDialog.cpp
     resources/resources.qrc
 )
 

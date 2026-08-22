@@ -175,6 +175,23 @@
     "language 标识不合法": "Invalid language identifier",
     "无法创建语言包目录": "Unable to create the language-pack directory",
     "https://relay.example.com（可省略 /v1）": "https://relay.example.com (/v1 optional)",
-    "只需填写站点地址；程序会自动探测带 /v1 与不带 /v1 的兼容端点": "Enter only the site URL; endpoints with and without /v1 are detected automatically"
+    "只需填写站点地址；程序会自动探测带 /v1 与不带 /v1 的兼容端点": "Enter only the site URL; endpoints with and without /v1 are detected automatically",
+    "站点扫描": "Protocol Scan",
+    "横向对比": "Compare Sites",
+    "站点协议扫描": "Protocol Compatibility Scan",
+    "未指定模型": "No model specified",
+    "检查项": "Check",
+    "诊断详情": "Diagnostic",
+    "扫描完成": "Scan completed",
+    "评分 %1/100": "Score %1/100",
+    "多站点横向对比": "Multi-site Comparison",
+    "按配置名称汇总当前会话中的测试结果；P95 使用线性插值计算。": "Results are grouped by profile; P95 uses linear interpolation.",
+    "站点": "Site",
+    "次数": "Runs",
+    "通过率": "Pass rate",
+    "平均 TTFT": "Avg TTFT",
+    "平均总延迟": "Avg total latency",
+    "平均速度": "Avg speed",
+    "取消": "Cancel"
   }
 }

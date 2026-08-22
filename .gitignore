@@ -18,3 +18,6 @@ ui-*.png
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local agent session state
+.mimosa/

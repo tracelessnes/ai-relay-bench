@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$QtRoot = "C:\Qt\6.11.1\mingw_64",
     [string]$CompilerRoot = "C:\Qt\Tools\mingw1310_64",
     [string]$BuildDir = "build-release",
@@ -10,10 +10,18 @@ Set-Location $root
 $cmake = (Get-Command cmake).Source
 $ninja = (Get-Command ninja).Source
 $env:PATH = "$QtRoot\bin;$CompilerRoot\bin;$env:PATH"
+$cmakeListsPath = Join-Path $root "CMakeLists.txt"
+$cmakeLists = [IO.File]::ReadAllText($cmakeListsPath, [Text.UTF8Encoding]::new($false))
+$versionMatch = [regex]::Match(
+    $cmakeLists,
+    '(?im)^\s*project\s*\(\s*[^\s\)]+\s+VERSION\s+(?<version>\d+(?:\.\d+){2})(?:\s|\))')
+if (-not $versionMatch.Success) {
+    throw "Unable to read a semantic project version from $cmakeListsPath"
+}
+$version = $versionMatch.Groups["version"].Value
 & $cmake -S . -B $BuildDir -G Ninja -DCMAKE_PREFIX_PATH=$QtRoot -DCMAKE_CXX_COMPILER="$CompilerRoot\bin\g++.exe" -DCMAKE_BUILD_TYPE=Release
 & $cmake --build $BuildDir -j 4
 & ctest --test-dir $BuildDir --output-on-failure
-$version = "1.1.0"
 $packageName = "AI-Relay-Bench-$version-win64"
 $target = Join-Path $DistDir $packageName
 if (Test-Path -LiteralPath $target) {
