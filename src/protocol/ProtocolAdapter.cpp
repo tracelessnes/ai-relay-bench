@@ -1,4 +1,4 @@
-﻿#include "ProtocolAdapter.h"
+#include "ProtocolAdapter.h"
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonValue>
@@ -88,6 +88,12 @@ QList<QPair<QByteArray,QByteArray>> ProtocolAdapter::commonHeaders(const Profile
 void ProtocolAdapter::addCustomHeaders(QList<QPair<QByteArray,QByteArray>>&h,const QJsonObject&o){for(auto it=o.begin();it!=o.end();++it){const QByteArray k=it.key().toUtf8(),v=it.value().toVariant().toString().toUtf8();for(auto i=h.begin();i!=h.end();){if(i->first.compare(k,Qt::CaseInsensitive)==0)i=h.erase(i);else++i;}h.append({k,v});}}
 Usage ProtocolAdapter::openAIUsage(const QJsonObject&o){Usage u;u.promptTokens=tokenValue(o,"prompt_tokens");u.completionTokens=tokenValue(o,"completion_tokens");u.totalTokens=tokenValue(o,"total_tokens");if(u.totalTokens<0&&u.promptTokens>=0&&u.completionTokens>=0)u.totalTokens=u.promptTokens+u.completionTokens;u.exact=u.totalTokens>=0;u.source="server";return u;}
 QList<ModelInfo> ProtocolAdapter::parseModels(const QByteArray&b,QString*error)const{QJsonParseError e;const auto d=QJsonDocument::fromJson(b,&e);if(e.error!=QJsonParseError::NoError){if(error)*error=e.errorString();return{};}QJsonArray a;if(d.isArray())a=d.array();else{const auto o=d.object();a=o.value("data").toArray();if(a.isEmpty())a=o.value("models").toArray();}QList<ModelInfo> out;QSet<QString> seen;for(const auto v:a){ModelInfo m;if(v.isString()){m.id=v.toString();m.displayName=m.id;}else{const auto o=v.toObject();m.id=o.value("id").toString(o.value("name").toString());m.displayName=o.value("display_name").toString(m.id);m.ownedBy=o.value("owned_by").toString();m.contextLength=contextOf(o);m.contextSource=m.contextLength>0?"API":"";}if(!m.id.isEmpty()&&!seen.contains(m.id)){seen.insert(m.id);out.push_back(m);}}if(out.isEmpty()&&error)*error="No model array found";return out;}
+QList<QPair<QByteArray,QByteArray>> ProtocolAdapter::modelHeaders(const Profile& profile) const {
+    RequestConfig config;
+    const auto attempts = completionAttempts(profile, config);
+    return attempts.isEmpty() ? QList<QPair<QByteArray,QByteArray>>() : attempts.first().headers;
+}
+
 bool ProtocolAdapter::shouldRetry(const CompletionAttempt&a,int status,const QByteArray&body,bool networkError)const{if(status==401||status==403||status==429)return false;if(networkError)return true;const auto l=body.toLower();if(status==404||status==405)return true;if(a.mode==0&&(status==400||status==422)&&l.contains("stream_options"))return true;if(a.streaming&&(status==400||status==406||status==415||status==422)&&(l.contains("stream")||l.contains("sse")))return true;return false;}
 std::unique_ptr<ProtocolAdapter> ProtocolAdapter::create(Protocol p){if(p==Protocol::Claude)return std::make_unique<ClaudeAdapter>();if(p==Protocol::Codex)return std::make_unique<CodexAdapter>();return std::make_unique<OpenAIAdapter>();}
 }

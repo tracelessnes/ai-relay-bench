@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "domain/Types.h"
 #include "SseDecoder.h"
 #include <QNetworkRequest>
@@ -27,6 +27,7 @@ class ProtocolAdapter {
 public:
     virtual ~ProtocolAdapter()=default;
     virtual QList<QUrl> modelUrls(const Profile&) const=0;
+    virtual QList<QPair<QByteArray,QByteArray>> modelHeaders(const Profile&) const;
     virtual QList<CompletionAttempt> completionAttempts(const Profile&,const RequestConfig&) const=0;
     virtual AdapterEvent parseSse(const SseEvent&,AdapterState&) const=0;
     virtual AdapterEvent parseNonStream(const QByteArray&,AdapterState&) const=0;

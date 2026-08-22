@@ -57,13 +57,16 @@ bool ExportService::json(const QString& path, const QList<TestResult>& results, 
 }
 
 bool ExportService::csv(const QString& path, const QList<TestResult>& results, QString* error) {
-    QString text = QStringLiteral("Timestamp,Profile,Protocol,Model,Status,TTFT_ms,Generation_ms,Total_ms,Tokens_per_s,Prompt_tokens,Completion_tokens,Total_tokens,Bytes,Output,Error\r\n");
+    QString text = QStringLiteral("Timestamp,Profile,Protocol,Model,Status,TTFT_ms,FirstByte_ms,FirstText_ms,Generation_ms,Total_ms,Tokens_per_s,DNS_ms,TCP_ms,TLS_ms,Request_ms,Prompt_tokens,Completion_tokens,Total_tokens,Bytes,Output,Error\r\n");
     for (const auto& original : results) {
         const auto result = redactedResult(original);
         text += QStringList{csvEscape(result.timestamp.toString(Qt::ISODate)), csvEscape(result.profileName),
                             csvEscape(protocolName(result.protocol)), csvEscape(result.model), csvEscape(statusName(result.status)),
-                            QString::number(result.metrics.ttftMs, 'f', 2), QString::number(result.metrics.generationMs, 'f', 2),
+                            QString::number(result.metrics.ttftMs, 'f', 2), QString::number(result.metrics.timing.firstByteMs, 'f', 2),
+                            QString::number(result.metrics.timing.firstTextMs, 'f', 2), QString::number(result.metrics.generationMs, 'f', 2),
                             QString::number(result.metrics.totalLatencyMs, 'f', 2), QString::number(result.metrics.tokensPerSecond, 'f', 2),
+                            QString::number(result.metrics.timing.dnsMs, 'f', 2), QString::number(result.metrics.timing.tcpMs, 'f', 2),
+                            QString::number(result.metrics.timing.tlsMs, 'f', 2), QString::number(result.metrics.timing.requestMs, 'f', 2),
                             QString::number(result.metrics.usage.promptTokens), QString::number(result.metrics.usage.completionTokens),
                             QString::number(result.metrics.usage.totalTokens), QString::number(result.metrics.responseBytes),
                             csvEscape(result.output), csvEscape(result.error.message)}.join(',') + QStringLiteral("\r\n");
@@ -72,13 +75,15 @@ bool ExportService::csv(const QString& path, const QList<TestResult>& results, Q
 }
 
 bool ExportService::markdown(const QString& path, const QList<TestResult>& results, QString* error) {
-    QString text = QStringLiteral("| Time | Profile | Protocol | Model | Status | TTFT ms | Total ms | Tokens/s | Usage P/C/T |\n|---|---|---|---|---:|---:|---:|---:|---|\n");
+    QString text = QStringLiteral("| Time | Profile | Protocol | Model | Status | TTFT ms | First byte ms | Generation ms | Total ms | Tokens/s | Usage P/C/T |\n|---|---|---|---|---:|---:|---:|---:|---|\n");
     for (const auto& original : results) {
         const auto result = redactedResult(original);
-        text += QStringLiteral("| %1 | %2 | %3 | %4 | %5 | %6 | %7 | %8 | %9/%10/%11 |\n")
+        text += QStringLiteral("| %1 | %2 | %3 | %4 | %5 | %6 | %7 | %8 | %9 | %10 | %11 | %12/%13/%14 |\n")
                     .arg(markdownEscape(result.timestamp.toString("HH:mm:ss")), markdownEscape(result.profileName),
                          markdownEscape(protocolName(result.protocol)), markdownEscape(result.model), markdownEscape(statusName(result.status)))
                     .arg(result.metrics.ttftMs, 0, 'f', 1)
+                    .arg(result.metrics.timing.firstByteMs, 0, 'f', 1)
+                    .arg(result.metrics.generationMs, 0, 'f', 1)
                     .arg(result.metrics.totalLatencyMs, 0, 'f', 1)
                     .arg(result.metrics.tokensPerSecond, 0, 'f', 1)
                     .arg(result.metrics.usage.promptTokens)

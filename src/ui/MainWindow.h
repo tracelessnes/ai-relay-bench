@@ -5,7 +5,7 @@
 
 class QComboBox; class QLineEdit; class QPlainTextEdit; class QSpinBox; class QCheckBox; class QLabel; class QPushButton; class QTableWidget; class QProgressBar;
 namespace airb { class BenchmarkController; class ModelService; class ProfileStore; class TrendChart; class TitleBar;
-class MainWindow final:public QMainWindow {
+class ScanDialog; class MainWindow final:public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* p=nullptr);
@@ -29,6 +29,7 @@ private slots:
     void showRaw(int,int);
     void filterResults(const QString&);
     void showSettings();
+    void scanSite();
     void toggleTheme();
     void retranslateUi();
 protected:
