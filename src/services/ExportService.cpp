@@ -1,9 +1,91 @@
-﻿#include "ExportService.h"
+#include "ExportService.h"
+#include "security/RedactionService.h"
+
+#include <QDateTime>
 #include <QFile>
-#include <QJsonDocument>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QTextStream>
-namespace airb {namespace{bool write(const QString&p,const QByteArray&b,QString*e){QFile f(p);if(!f.open(QIODevice::WriteOnly)){if(e)*e=f.errorString();return false;}f.write(b);return true;}QString esc(QString s){s.replace('"',"\"\"");return '"'+s+'"';}}
-bool ExportService::json(const QString&p,const QList<TestResult>&rs,QString*e){QJsonArray a;for(const auto&r:rs)a.push_back(toJson(r));QJsonObject root{{"application","AI Relay Station Benchmark & Tester"},{"version",APP_VERSION},{"exportedAt",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},{"results",a}};return write(p,QJsonDocument(root).toJson(QJsonDocument::Indented),e);}
-bool ExportService::csv(const QString&p,const QList<TestResult>&rs,QString*e){QString s="Timestamp,Profile,Protocol,Model,Status,TTFT_ms,Generation_ms,Total_ms,Tokens_per_s,Prompt_tokens,Completion_tokens,Total_tokens,Bytes,Output,Error\r\n";for(const auto&r:rs)s+=QStringList{esc(r.timestamp.toString(Qt::ISODate)),esc(r.profileName),esc(protocolName(r.protocol)),esc(r.model),esc(statusName(r.status)),QString::number(r.metrics.ttftMs,'f',2),QString::number(r.metrics.generationMs,'f',2),QString::number(r.metrics.totalLatencyMs,'f',2),QString::number(r.metrics.tokensPerSecond,'f',2),QString::number(r.metrics.usage.promptTokens),QString::number(r.metrics.usage.completionTokens),QString::number(r.metrics.usage.totalTokens),QString::number(r.metrics.responseBytes),esc(r.output),esc(r.error.message)}.join(',')+"\r\n";return write(p,QByteArray("\xEF\xBB\xBF")+s.toUtf8(),e);}
-bool ExportService::markdown(const QString&p,const QList<TestResult>&rs,QString*e){QString s="| Time | Profile | Protocol | Model | Status | TTFT ms | Total ms | Tokens/s | Usage P/C/T |\n|---|---|---|---|---:|---:|---:|---:|---|\n";for(const auto&r:rs)s+=QString("| %1 | %2 | %3 | %4 | %5 | %6 | %7 | %8 | %9/%10/%11 |\n").arg(r.timestamp.toString("HH:mm:ss"),r.profileName,protocolName(r.protocol),r.model,statusName(r.status)).arg(r.metrics.ttftMs,0,'f',1).arg(r.metrics.totalLatencyMs,0,'f',1).arg(r.metrics.tokensPerSecond,0,'f',1).arg(r.metrics.usage.promptTokens).arg(r.metrics.usage.completionTokens).arg(r.metrics.usage.totalTokens);return write(p,s.toUtf8(),e);}}
+
+namespace airb {
+namespace {
+bool writeFile(const QString& path, const QByteArray& bytes, QString* error) {
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        if (error) *error = file.errorString();
+        return false;
+    }
+    if (file.write(bytes) != bytes.size()) {
+        if (error) *error = file.errorString();
+        return false;
+    }
+    return true;
+}
+
+QString csvEscape(QString value) {
+    value = RedactionService::text(value);
+    value.replace('"', QStringLiteral("\"\""));
+    return '"' + value + '"';
+}
+
+QString markdownEscape(QString value) {
+    value = RedactionService::text(value);
+    value.replace('|', QStringLiteral("\\|"));
+    value.replace('\n', QStringLiteral("<br>"));
+    value.replace('\r', QString());
+    return value;
+}
+
+TestResult redactedResult(TestResult result) {
+    result.output = RedactionService::text(result.output);
+    result.rawResponse = RedactionService::text(result.rawResponse);
+    result.error.message = RedactionService::text(result.error.message);
+    result.error.rawSummary = RedactionService::text(result.error.rawSummary);
+    result.note = RedactionService::text(result.note);
+    return result;
+}
+} // namespace
+
+bool ExportService::json(const QString& path, const QList<TestResult>& results, QString* error) {
+    QJsonArray array;
+    for (const auto& result : results) array.push_back(toJson(redactedResult(result)));
+    const QJsonObject root{{"application", "AI Relay Station Benchmark & Tester"},
+                           {"version", APP_VERSION},
+                           {"exportedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+                           {"results", array}};
+    return writeFile(path, QJsonDocument(root).toJson(QJsonDocument::Indented), error);
+}
+
+bool ExportService::csv(const QString& path, const QList<TestResult>& results, QString* error) {
+    QString text = QStringLiteral("Timestamp,Profile,Protocol,Model,Status,TTFT_ms,Generation_ms,Total_ms,Tokens_per_s,Prompt_tokens,Completion_tokens,Total_tokens,Bytes,Output,Error\r\n");
+    for (const auto& original : results) {
+        const auto result = redactedResult(original);
+        text += QStringList{csvEscape(result.timestamp.toString(Qt::ISODate)), csvEscape(result.profileName),
+                            csvEscape(protocolName(result.protocol)), csvEscape(result.model), csvEscape(statusName(result.status)),
+                            QString::number(result.metrics.ttftMs, 'f', 2), QString::number(result.metrics.generationMs, 'f', 2),
+                            QString::number(result.metrics.totalLatencyMs, 'f', 2), QString::number(result.metrics.tokensPerSecond, 'f', 2),
+                            QString::number(result.metrics.usage.promptTokens), QString::number(result.metrics.usage.completionTokens),
+                            QString::number(result.metrics.usage.totalTokens), QString::number(result.metrics.responseBytes),
+                            csvEscape(result.output), csvEscape(result.error.message)}.join(',') + QStringLiteral("\r\n");
+    }
+    return writeFile(path, QByteArray("\xEF\xBB\xBF") + text.toUtf8(), error);
+}
+
+bool ExportService::markdown(const QString& path, const QList<TestResult>& results, QString* error) {
+    QString text = QStringLiteral("| Time | Profile | Protocol | Model | Status | TTFT ms | Total ms | Tokens/s | Usage P/C/T |\n|---|---|---|---|---:|---:|---:|---:|---|\n");
+    for (const auto& original : results) {
+        const auto result = redactedResult(original);
+        text += QStringLiteral("| %1 | %2 | %3 | %4 | %5 | %6 | %7 | %8 | %9/%10/%11 |\n")
+                    .arg(markdownEscape(result.timestamp.toString("HH:mm:ss")), markdownEscape(result.profileName),
+                         markdownEscape(protocolName(result.protocol)), markdownEscape(result.model), markdownEscape(statusName(result.status)))
+                    .arg(result.metrics.ttftMs, 0, 'f', 1)
+                    .arg(result.metrics.totalLatencyMs, 0, 'f', 1)
+                    .arg(result.metrics.tokensPerSecond, 0, 'f', 1)
+                    .arg(result.metrics.usage.promptTokens)
+                    .arg(result.metrics.usage.completionTokens)
+                    .arg(result.metrics.usage.totalTokens);
+    }
+    return writeFile(path, text.toUtf8(), error);
+}
+
+} // namespace airb

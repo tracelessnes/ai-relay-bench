@@ -33,6 +33,8 @@ qt_add_executable(ai-relay-bench WIN32
     src/persistence/SecureStorage.cpp
     src/persistence/ResultRepository.h
     src/persistence/ResultRepository.cpp
+    src/security/RedactionService.h
+    src/security/RedactionService.cpp
     src/ui/MainWindow.h
     src/ui/MainWindow.cpp
     src/ui/TrendChart.h
@@ -61,6 +63,7 @@ qt_add_executable(ai-relay-bench-tests
     src/domain/Types.cpp
     src/domain/Statistics.cpp
     src/protocol/SseDecoder.cpp
+    src/security/RedactionService.cpp
 )
 target_include_directories(ai-relay-bench-tests PRIVATE src)
 target_link_libraries(ai-relay-bench-tests PRIVATE Qt6::Core Qt6::Test)
@@ -72,6 +75,7 @@ qt_add_executable(ai-relay-bench-integration-tests
     src/protocol/SseDecoder.cpp
     src/protocol/ProtocolAdapter.cpp
     src/network/BenchmarkJob.cpp
+    src/security/RedactionService.cpp
 )
 target_include_directories(ai-relay-bench-integration-tests PRIVATE src)
 target_link_libraries(ai-relay-bench-integration-tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)
