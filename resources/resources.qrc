@@ -1,0 +1,8 @@
+<RCC>
+  <qresource prefix="/">
+    <file>dark.qss</file>
+    <file>light.qss</file>
+    <file alias="lang/zh-CN.json">lang/zh-CN.json</file>
+    <file alias="lang/en-US.json">lang/en-US.json</file>
+  </qresource>
+</RCC>

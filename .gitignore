@@ -1,0 +1,20 @@
+﻿build*/
+dist/
+
+# IDE / CMake user files
+*.user
+CMakeUserPresets.json
+
+# Runtime logs and temporary files
+*.log
+*.out
+*.err
+app-*.txt
+.tmp-*
+x.txt
+ui-*.png
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
