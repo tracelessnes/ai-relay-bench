@@ -56,10 +56,14 @@ QJsonObject toJson(const TestResult& r, bool includeRaw) {
                       {"completionTokens",double(r.metrics.usage.completionTokens)},
                       {"totalTokens",double(r.metrics.usage.totalTokens)},
                       {"exact",r.metrics.usage.exact},{"source",r.metrics.usage.source}};
+    const QJsonObject timing{{"dnsMs", r.metrics.timing.dnsMs}, {"tcpMs", r.metrics.timing.tcpMs},
+                             {"tlsMs", r.metrics.timing.tlsMs}, {"requestMs", r.metrics.timing.requestMs},
+                             {"firstByteMs", r.metrics.timing.firstByteMs}, {"firstTextMs", r.metrics.timing.firstTextMs},
+                             {"generationMs", r.metrics.timing.generationMs}, {"totalMs", r.metrics.timing.totalMs}};
     QJsonObject metrics{{"ttftMs",r.metrics.ttftMs},{"firstByteMs",r.metrics.firstByteMs},
                         {"generationMs",r.metrics.generationMs},{"totalLatencyMs",r.metrics.totalLatencyMs},
                         {"tokensPerSecond",r.metrics.tokensPerSecond},{"responseBytes",double(r.metrics.responseBytes)},
-                        {"usage",usage}};
+                        {"timing", timing}, {"usage",usage}};
     QJsonObject error{{"httpStatus",r.error.httpStatus},{"reason",r.error.reason},{"type",r.error.type},
                       {"code",r.error.code},{"message",r.error.message},{"rawSummary",r.error.rawSummary},
                       {"html",r.error.html},{"timeout",r.error.timeout},{"network",r.error.network}};
@@ -83,7 +87,17 @@ TestResult testResultFromJson(const QJsonObject& o) {
     const auto m=o.value("metrics").toObject(); r.metrics.ttftMs=m.value("ttftMs").toDouble(-1);
     r.metrics.firstByteMs=m.value("firstByteMs").toDouble(-1); r.metrics.generationMs=m.value("generationMs").toDouble(-1);
     r.metrics.totalLatencyMs=m.value("totalLatencyMs").toDouble(-1); r.metrics.tokensPerSecond=m.value("tokensPerSecond").toDouble(-1);
-    r.metrics.responseBytes=qRound64(m.value("responseBytes").toDouble()); const auto u=m.value("usage").toObject();
+    r.metrics.responseBytes=qRound64(m.value("responseBytes").toDouble());
+    const auto t=m.value("timing").toObject();
+    r.metrics.timing.dnsMs=t.value("dnsMs").toDouble(-1);
+    r.metrics.timing.tcpMs=t.value("tcpMs").toDouble(-1);
+    r.metrics.timing.tlsMs=t.value("tlsMs").toDouble(-1);
+    r.metrics.timing.requestMs=t.value("requestMs").toDouble(-1);
+    r.metrics.timing.firstByteMs=t.value("firstByteMs").toDouble(r.metrics.firstByteMs);
+    r.metrics.timing.firstTextMs=t.value("firstTextMs").toDouble(r.metrics.ttftMs);
+    r.metrics.timing.generationMs=t.value("generationMs").toDouble(r.metrics.generationMs);
+    r.metrics.timing.totalMs=t.value("totalMs").toDouble(r.metrics.totalLatencyMs);
+    const auto u=m.value("usage").toObject();
     r.metrics.usage.promptTokens=qRound64(u.value("promptTokens").toDouble(-1));
     r.metrics.usage.completionTokens=qRound64(u.value("completionTokens").toDouble(-1));
     r.metrics.usage.totalTokens=qRound64(u.value("totalTokens").toDouble(-1));

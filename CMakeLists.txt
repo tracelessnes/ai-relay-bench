@@ -23,6 +23,8 @@ qt_add_executable(ai-relay-bench WIN32
     src/network/BenchmarkJob.cpp
     src/services/BenchmarkController.h
     src/services/BenchmarkController.cpp
+    src/services/ScanService.h
+    src/services/ScanService.cpp
     src/services/ModelService.h
     src/services/ModelService.cpp
     src/services/ProfileStore.h
@@ -63,10 +65,12 @@ qt_add_executable(ai-relay-bench-tests
     src/domain/Types.cpp
     src/domain/Statistics.cpp
     src/protocol/SseDecoder.cpp
+    src/protocol/ProtocolAdapter.cpp
     src/security/RedactionService.cpp
+    src/services/ScanService.cpp
 )
 target_include_directories(ai-relay-bench-tests PRIVATE src)
-target_link_libraries(ai-relay-bench-tests PRIVATE Qt6::Core Qt6::Test)
+target_link_libraries(ai-relay-bench-tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME core-tests COMMAND ai-relay-bench-tests)
 
 qt_add_executable(ai-relay-bench-integration-tests
@@ -76,6 +80,7 @@ qt_add_executable(ai-relay-bench-integration-tests
     src/protocol/ProtocolAdapter.cpp
     src/network/BenchmarkJob.cpp
     src/security/RedactionService.cpp
+    src/services/ScanService.cpp
 )
 target_include_directories(ai-relay-bench-integration-tests PRIVATE src)
 target_link_libraries(ai-relay-bench-integration-tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)

@@ -80,7 +80,19 @@ struct ErrorInfo {
     bool network = false;
 };
 
+struct LinkTiming {
+    double dnsMs = -1;
+    double tcpMs = -1;
+    double tlsMs = -1;
+    double requestMs = -1;
+    double firstByteMs = -1;
+    double firstTextMs = -1;
+    double generationMs = -1;
+    double totalMs = -1;
+};
+
 struct Metrics {
+    LinkTiming timing;
     double ttftMs = -1;
     double firstByteMs = -1;
     double generationMs = -1;
