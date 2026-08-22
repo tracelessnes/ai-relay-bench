@@ -7,11 +7,13 @@ class DialogTitleBar final : public QWidget {
 public:
     explicit DialogTitleBar(QWidget* window, QWidget* parent = nullptr);
     void setTitle(const QString& title);
+    void setCloseToolTip(const QString& text);
 protected:
     void mousePressEvent(QMouseEvent* event) override;
 private:
     QWidget* window_ = nullptr;
     QLabel* title_ = nullptr;
+    QPushButton* close_ = nullptr;
 };
 
 class TitleBar final : public QWidget {

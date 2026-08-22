@@ -221,6 +221,8 @@
     "capture.exportFailed": "Export failed",
     "capture.exported": "Exported: ",
     "capture.running": "Capture proxy is running",
-    "capture.stopped": "Capture proxy is stopped"
+    "capture.stopped": "Capture proxy is stopped",
+    "capture.instructions": "How to use: click \"Start capture\", set HTTP_PROXY and HTTPS_PROXY in your CLI tool, then run a request. This version supports HTTP plaintext proxying only; HTTPS CONNECT is not supported. API keys in request headers are redacted automatically.",
+    "capture.httpsWarning": "Note: HTTPS CONNECT/HTTPS MITM is not supported in this version, so most HTTPS CLI requests cannot be decrypted and inspected."
   }
 }

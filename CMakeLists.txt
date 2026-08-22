@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(AIRelayBench VERSION 1.2.0 LANGUAGES CXX)
+project(AIRelayBench VERSION 1.2.1 LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "AI Relay Bench is Windows only.")
@@ -87,6 +87,26 @@ qt_add_executable(ai-relay-bench-tests
 target_include_directories(ai-relay-bench-tests PRIVATE src)
 target_link_libraries(ai-relay-bench-tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME core-tests COMMAND ai-relay-bench-tests)
+
+qt_add_executable(ai-relay-bench-language-tests
+    tests/tst_language.cpp
+    src/i18n/LanguageManager.cpp
+    src/ui/CaptureDialog.cpp
+    src/ui/SettingsDialog.cpp
+    src/ui/TitleBar.cpp
+    src/ui/ThemeManager.cpp
+    src/capture/CaptureTypes.cpp
+    src/capture/HttpParser.cpp
+    src/capture/ClientFingerprint.cpp
+    src/capture/HarExporter.cpp
+    src/capture/CaptureProxyServer.cpp
+    src/security/RedactionService.cpp
+    src/protocol/SseDecoder.cpp
+    resources/resources.qrc
+)
+target_include_directories(ai-relay-bench-language-tests PRIVATE src)
+target_link_libraries(ai-relay-bench-language-tests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
+add_test(NAME language-tests COMMAND ai-relay-bench-language-tests)
 
 qt_add_executable(ai-relay-bench-capture-tests
     tests/tst_capture.cpp

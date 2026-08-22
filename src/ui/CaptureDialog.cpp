@@ -28,7 +28,7 @@
 
 namespace airb {
 namespace {
-QString tr(const char* key, const char* fallback) {
+QString translateKey(const char* key, const char* fallback) {
     return LanguageManager::instance()->trKey(QString::fromLatin1(key),
                                                QString::fromLatin1(fallback));
 }
@@ -106,6 +106,11 @@ CaptureDialog::CaptureDialog(QWidget* parent) : QDialog(parent), proxy_(new Capt
     controls->addStretch();
     root->addLayout(controls);
 
+    instructions_ = new QLabel;
+    instructions_->setObjectName(QStringLiteral("captureInstructions"));
+    instructions_->setWordWrap(true);
+    root->addWidget(instructions_);
+
     environment_ = new QLabel;
     environment_->setObjectName(QStringLiteral("captureHint"));
     environment_->setWordWrap(true);
@@ -174,12 +179,12 @@ CaptureDialog::CaptureDialog(QWidget* parent) : QDialog(parent), proxy_(new Capt
 void CaptureDialog::startCapture() {
     QHostAddress address;
     if (!address.setAddress(address_->text().trimmed())) {
-        QMessageBox::warning(this, tr("capture.invalidAddress", "Invalid listen address"),
-                             tr("capture.invalidAddress", "Please enter a valid listen address."));
+        QMessageBox::warning(this, translateKey("capture.invalidAddress", "Invalid listen address"),
+                             translateKey("capture.invalidAddress", "Please enter a valid listen address."));
         return;
     }
     if (!proxy_->start(address, static_cast<quint16>(port_->value()))) {
-        QMessageBox::critical(this, tr("capture.start", "Start capture"), proxy_->errorString());
+        QMessageBox::critical(this, translateKey("capture.start", "Start capture"), proxy_->errorString());
         return;
     }
     updateState(true);
@@ -215,7 +220,7 @@ void CaptureDialog::onExchange(const CaptureExchange& exchange) {
         table_->setItem(row, column, new QTableWidgetItem(values.at(column)));
     table_->selectRow(row);
     showExchange(row);
-    count_->setText(tr("capture.count", "Captured %1 request(s)").arg(exchanges_.size()));
+    count_->setText(translateKey("capture.count", "Captured %1 request(s)").arg(exchanges_.size()));
 }
 
 void CaptureDialog::selectExchange(int row, int column) {
@@ -243,19 +248,19 @@ void CaptureDialog::clearCaptures() {
     responseBody_->clear();
     sseEvents_->clear();
     detailTitle_->clear();
-    count_->setText(tr("capture.count", "Captured %1 request(s)").arg(0));
+    count_->setText(translateKey("capture.count", "Captured %1 request(s)").arg(0));
 }
 
 void CaptureDialog::exportCapture() {
     if (exchanges_.isEmpty()) {
-        QMessageBox::information(this, tr("capture.export", "Export capture"),
-                                 tr("capture.empty", "There are no captured exchanges to export."));
+        QMessageBox::information(this, translateKey("capture.export", "Export capture"),
+                                 translateKey("capture.empty", "There are no captured exchanges to export."));
         return;
     }
     QString selected;
     const QString filter = QStringLiteral("HAR / JSON (*.har *.json);;Markdown (*.md);;JSON (*.json)");
     const QString path = QFileDialog::getSaveFileName(
-        this, tr("capture.export", "Export capture"),
+        this, translateKey("capture.export", "Export capture"),
         QStringLiteral("ai-relay-capture.har"), filter, &selected);
     if (path.isEmpty()) return;
 
@@ -273,10 +278,10 @@ void CaptureDialog::exportCapture() {
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size()) {
-        QMessageBox::critical(this, tr("capture.export", "Export capture"), file.errorString());
+        QMessageBox::critical(this, translateKey("capture.export", "Export capture"), file.errorString());
         return;
     }
-    state_->setText(tr("capture.exported", "Exported: ") + path);
+    state_->setText(translateKey("capture.exported", "Exported: ") + path);
 }
 
 void CaptureDialog::updateState(bool running, const QString& message) {
@@ -287,10 +292,10 @@ void CaptureDialog::updateState(bool running, const QString& message) {
     if (!message.isEmpty()) {
         state_->setText(message);
     } else {
-        state_->setText(running ? tr("capture.running", "Capture proxy is running")
-                                : tr("capture.stopped", "Capture proxy is stopped"));
+        state_->setText(running ? translateKey("capture.running", "Capture proxy is running")
+                                : translateKey("capture.stopped", "Capture proxy is stopped"));
     }
-    environment_->setText(tr("capture.environment",
+    environment_->setText(translateKey("capture.environment",
                               "HTTP proxy only; HTTPS CONNECT is not enabled. CLI settings:\n"
                               "$env:HTTP_PROXY=\"http://127.0.0.1:%1\"\n"
                               "$env:HTTPS_PROXY=\"http://127.0.0.1:%1\"")
@@ -298,30 +303,34 @@ void CaptureDialog::updateState(bool running, const QString& message) {
 }
 
 void CaptureDialog::retranslate() {
-    const QString title = tr("capture.analysis", "Capture Analysis");
+    const QString title = translateKey("capture.analysis", "Capture Analysis");
     setWindowTitle(title);
     title_->setText(title);
     if (titleBar_) titleBar_->setTitle(title);
     if (auto* label = findChild<QLabel*>(QStringLiteral("captureAddressLabel")))
-        label->setText(tr("capture.address", "Listen address"));
+        label->setText(translateKey("capture.address", "Listen address"));
     if (auto* label = findChild<QLabel*>(QStringLiteral("capturePortLabel")))
-        label->setText(tr("capture.port", "Port"));
-    start_->setText(tr("capture.start", "Start capture"));
-    stop_->setText(tr("capture.stop", "Stop capture"));
-    clear_->setText(tr("capture.clear", "Clear"));
-    export_->setText(tr("capture.export", "Export"));
-    count_->setText(tr("capture.count", "Captured %1 request(s)").arg(exchanges_.size()));
+        label->setText(translateKey("capture.port", "Port"));
+    start_->setText(translateKey("capture.start", "Start capture"));
+    stop_->setText(translateKey("capture.stop", "Stop capture"));
+    clear_->setText(translateKey("capture.clear", "Clear"));
+    export_->setText(translateKey("capture.export", "Export"));
+    instructions_->setText(translateKey("capture.instructions",
+                               "How to use: click Start capture, set HTTP_PROXY and HTTPS_PROXY in your CLI, then run a request."));
+    environment_->setText(translateKey("capture.httpsWarning",
+                              "HTTPS CONNECT/HTTPS MITM is not supported in this version."));
+    count_->setText(translateKey("capture.count", "Captured %1 request(s)").arg(exchanges_.size()));
     table_->setHorizontalHeaderLabels({
-        tr("capture.time", "Time"), tr("capture.method", "Method"), tr("capture.url", "URL"),
-        tr("capture.client", "Client"), tr("capture.status", "Status"),
-        tr("capture.duration", "Duration ms"), tr("capture.requestBytes", "Request bytes"),
-        tr("capture.responseBytes", "Response bytes")
+        translateKey("capture.time", "Time"), translateKey("capture.method", "Method"), translateKey("capture.url", "URL"),
+        translateKey("capture.client", "Client"), translateKey("capture.status", "Status"),
+        translateKey("capture.duration", "Duration ms"), translateKey("capture.requestBytes", "Request bytes"),
+        translateKey("capture.responseBytes", "Response bytes")
     });
-    detailTabs_->setTabText(0, tr("capture.requestHeaders", "Request headers"));
-    detailTabs_->setTabText(1, tr("capture.requestBody", "Request body"));
-    detailTabs_->setTabText(2, tr("capture.responseHeaders", "Response headers"));
-    detailTabs_->setTabText(3, tr("capture.responseBody", "Response body"));
-    detailTabs_->setTabText(4, tr("capture.sse", "SSE events"));
+    detailTabs_->setTabText(0, translateKey("capture.requestHeaders", "Request headers"));
+    detailTabs_->setTabText(1, translateKey("capture.requestBody", "Request body"));
+    detailTabs_->setTabText(2, translateKey("capture.responseHeaders", "Response headers"));
+    detailTabs_->setTabText(3, translateKey("capture.responseBody", "Response body"));
+    detailTabs_->setTabText(4, translateKey("capture.sse", "SSE events"));
     updateState(proxy_->isListening());
 }
 

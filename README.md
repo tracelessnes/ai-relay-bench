@@ -1,11 +1,11 @@
 # AI Relay Station Benchmark & Tester
 
-> **Windows only / ??? Windows?** AI Relay Bench is currently distributed and tested as a Windows desktop application. ????? Windows ????? Windows Release ???
+> **Windows only / 仅支持 Windows** AI Relay Bench 目前以 Windows 桌面应用形式分发和测试，发布包仅提供 Windows 版本。
 >
 
 一个面向 AI 中转站、自建反代与官方兼容端点的现代化 Qt 6 桌面测速工具。用于验证 OpenAI Chat Completions、Anthropic Claude Messages 与 OpenAI Responses/Codex 三类协议的可用性、流式兼容性、延迟、吞吐和多轮稳定性。
 
-当前版本：**V1.2.0**
+当前版本：**V1.2.1**
 
 ## 功能
 
@@ -133,8 +133,8 @@ ctest --test-dir build-qt --output-on-failure
 powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
 ```
 
-当前版本的发布目录：`dist/AI-Relay-Bench-1.2.0-win64/`
-当前版本的 ZIP：`dist/AI-Relay-Bench-1.2.0-win64.zip`
+当前版本的发布目录：`dist/AI-Relay-Bench-1.2.1-win64/`
+当前版本的 ZIP：`dist/AI-Relay-Bench-1.2.1-win64.zip`
 
 ## 数据与安全
 
@@ -158,7 +158,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
 
 ## 内置 HTTP 抓包
 
-V1.2.0 包含内置抓包分析器，可用于调试 CLI 工具和中转站之间的 HTTP 明文代理请求。
+V1.2.1 包含内置抓包分析器，可用于调试 CLI 工具和中转站之间的 HTTP 明文代理请求。
 
 - 默认监听 `127.0.0.1:8765`，在主界面点击“Capture Analysis / 抓包分析”打开。
 - 支持请求头、请求体、响应头、响应体、SSE 事件、延迟、传输字节和 HAR/JSON/Markdown 导出。

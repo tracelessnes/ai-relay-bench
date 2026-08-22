@@ -1,6 +1,7 @@
 #include "SettingsDialog.h"
 #include "i18n/LanguageManager.h"
 #include "ThemeManager.h"
+#include "ui/TitleBar.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -19,52 +20,6 @@
 #include <QWindow>
 
 namespace airb {
-namespace {
-class DialogTitleBar final : public QWidget {
-public:
-    explicit DialogTitleBar(QDialog* window, QWidget* parent = nullptr)
-        : QWidget(parent), window_(window) {
-        setObjectName(QStringLiteral("titleBar"));
-        setFixedHeight(42);
-        auto* layout = new QHBoxLayout(this);
-        layout->setContentsMargins(12, 0, 6, 0);
-        layout->setSpacing(2);
-        auto* mark = new QLabel(QStringLiteral("AI"));
-        mark->setObjectName(QStringLiteral("appMark"));
-        mark->setAlignment(Qt::AlignCenter);
-        mark->setFixedSize(28, 28);
-        title = new QLabel;
-        title->setObjectName(QStringLiteral("windowTitleLabel"));
-        close = new QPushButton(QStringLiteral("×"));
-        close->setObjectName(QStringLiteral("titleBarClose"));
-        close->setFlat(true);
-        close->setCursor(Qt::PointingHandCursor);
-        close->setFixedSize(46, 32);
-        layout->addWidget(mark);
-        layout->addSpacing(8);
-        layout->addWidget(title);
-        layout->addStretch();
-        layout->addWidget(close);
-        connect(close, &QPushButton::clicked, window_, &QDialog::reject);
-    }
-
-    QLabel* title = nullptr;
-    QPushButton* close = nullptr;
-
-protected:
-    void mousePressEvent(QMouseEvent* event) override {
-        if (event->button() == Qt::LeftButton && window_ && window_->windowHandle()) {
-            window_->windowHandle()->startSystemMove();
-            event->accept();
-            return;
-        }
-        QWidget::mousePressEvent(event);
-    }
-
-private:
-    QDialog* window_ = nullptr;
-};
-}
 
 SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     setObjectName(QStringLiteral("settingsDialog"));
@@ -76,10 +31,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
     auto* shell = new QVBoxLayout(this);
     shell->setContentsMargins(0, 0, 0, 0);
     shell->setSpacing(0);
-    auto* bar = new DialogTitleBar(this, this);
-    titleBar_ = bar;
-    titleText_ = bar->title;
-    titleClose_ = bar->close;
+    titleBar_ = new DialogTitleBar(this, this);
     shell->addWidget(titleBar_);
 
     auto* body = new QWidget(this);
@@ -213,8 +165,10 @@ void SettingsDialog::retranslate() {
     auto* language = LanguageManager::instance();
     const QString title = language->trText(QStringLiteral("系统设置"));
     setWindowTitle(title);
-    titleText_->setText(title);
-    titleClose_->setToolTip(language->trText(QStringLiteral("关闭")));
+    if (titleBar_) {
+        titleBar_->setTitle(title);
+        titleBar_->setCloseToolTip(language->trText(QStringLiteral("\u5173\u95ed")));
+    }
     languageLabel_->setText(language->trText(QStringLiteral("界面语言")));
     followSystem_->setText(language->trText(QStringLiteral("自动跟随系统语言")));
     themeLabel_->setText(language->trText(QStringLiteral("情景皮肤")));

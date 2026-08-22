@@ -8,6 +8,7 @@ class QPushButton;
 class QWidget;
 
 namespace airb {
+class DialogTitleBar;
 class SettingsDialog final : public QDialog {
     Q_OBJECT
 public:
@@ -21,9 +22,7 @@ private slots:
     void retranslate();
 
 private:
-    QWidget* titleBar_ = nullptr;
-    QLabel* titleText_ = nullptr;
-    QPushButton* titleClose_ = nullptr;
+    DialogTitleBar* titleBar_ = nullptr;
     QComboBox* language_ = nullptr;
     QComboBox* theme_ = nullptr;
     QCheckBox* followSystem_ = nullptr;

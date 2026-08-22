@@ -44,6 +44,7 @@ private:
     QSpinBox* port_ = nullptr;
     QLabel* state_ = nullptr;
     QLabel* count_ = nullptr;
+    QLabel* instructions_ = nullptr;
     QLabel* environment_ = nullptr;
     QPushButton* start_ = nullptr;
     QPushButton* stop_ = nullptr;

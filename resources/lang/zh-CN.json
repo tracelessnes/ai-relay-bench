@@ -221,6 +221,8 @@
     "capture.exportFailed": "导出失败",
     "capture.exported": "已导出：",
     "capture.running": "抓包代理运行中",
-    "capture.stopped": "抓包代理已停止"
+    "capture.stopped": "抓包代理已停止",
+    "capture.instructions": "使用方法：点击“启动抓包”，然后在 CLI 工具中设置 HTTP_PROXY 和 HTTPS_PROXY 环境变量，再运行请求。当前仅支持 HTTP 明文代理；HTTPS CONNECT 暂不支持。请求头中的 API Key 会自动脱敏。",
+    "capture.httpsWarning": "注意：当前版本不支持 HTTPS CONNECT/HTTPS MITM，因此无法解密查看大多数 HTTPS CLI 请求。"
   }
 }

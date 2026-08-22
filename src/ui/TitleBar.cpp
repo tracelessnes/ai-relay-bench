@@ -22,19 +22,20 @@ DialogTitleBar::DialogTitleBar(QWidget* window, QWidget* parent) : QWidget(paren
     mark->setFixedSize(28, 28);
     title_ = new QLabel;
     title_->setObjectName(QStringLiteral("windowTitleLabel"));
-    auto* close = new QPushButton(QStringLiteral("?"));
-    close->setObjectName(QStringLiteral("titleBarClose"));
-    close->setFlat(true);
-    close->setCursor(Qt::PointingHandCursor);
-    close->setFixedSize(46, 32);
+    close_ = new QPushButton(QStringLiteral("\u00D7"));
+    close_->setObjectName(QStringLiteral("titleBarClose"));
+    close_->setFlat(true);
+    close_->setCursor(Qt::PointingHandCursor);
+    close_->setFixedSize(46, 32);
     layout->addWidget(mark);
     layout->addSpacing(8);
     layout->addWidget(title_);
     layout->addStretch();
-    layout->addWidget(close);
-    connect(close, &QPushButton::clicked, this, [this] { if (window_) window_->close(); });
+    layout->addWidget(close_);
+    connect(close_, &QPushButton::clicked, this, [this] { if (window_) window_->close(); });
 }
 void DialogTitleBar::setTitle(const QString& title) { if (title_) title_->setText(title); }
+void DialogTitleBar::setCloseToolTip(const QString& text) { if (close_) close_->setToolTip(text); }
 void DialogTitleBar::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton && window_ && window_->windowHandle()) {
         window_->windowHandle()->startSystemMove();
