@@ -59,5 +59,6 @@ private:
     QTimer timeoutTimer_;
     bool finished_ = false;
     bool streamCompleted_=false;
+    QByteArray lastEventSignature_;
 };
 }

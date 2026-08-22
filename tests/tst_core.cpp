@@ -26,7 +26,50 @@ void scanEndpoints(){
     result.checks.append({QStringLiteral("openai"), QStringLiteral("OpenAI"), QStringLiteral("warn"), QStringLiteral("stream_options unsupported"), 400, false});
     QCOMPARE(result.score(), 50);
 }
-void timingSerialization(){
+void compareStatistics(){
+    TestResult a; a.profileName = QStringLiteral("A"); a.passed = true; a.metrics.ttftMs = 10; a.metrics.totalLatencyMs = 100; a.metrics.tokensPerSecond = 5;
+    TestResult b = a; b.metrics.ttftMs = 20; b.metrics.totalLatencyMs = 200; b.metrics.tokensPerSecond = 7;
+    TestResult c = a; c.profileName = QStringLiteral("B"); c.passed = false; c.metrics.ttftMs = 30; c.metrics.totalLatencyMs = 300; c.metrics.tokensPerSecond = 3;
+    const auto summaries = compareResults({a, b, c});
+    QCOMPARE(summaries.size(), 2);
+    QCOMPARE(summaries.at(0).label, QStringLiteral("A"));
+    QCOMPARE(summaries.at(0).total, 2);
+    QCOMPARE(summaries.at(0).passRate, 100.0);
+    QCOMPARE(summaries.at(0).p95Ttft, 19.5);
+    QCOMPARE(summaries.at(1).passRate, 0.0);
+}
+
+void scanSerialization(){
+    ScanResult result;
+    result.profileName = QStringLiteral("mock");
+    result.model = QStringLiteral("demo");
+    result.protocol = Protocol::Claude;
+    result.diagnostic = QStringLiteral("safe diagnostic");
+    result.discoveredModels = {QStringLiteral("demo"), QStringLiteral("demo-2")};
+    result.maxContextLength = 1000000;
+    result.modelsSupported = true;
+    result.streamSupported = true;
+    result.usageSupported = true;
+    result.streamOptionsSupported = true;
+    result.htmlIntercepted = false;
+    result.checks.append({QStringLiteral("models"), QStringLiteral("模型列表"), QStringLiteral("pass"), QStringLiteral("发现 1 个模型"), 200, true});
+    result.checks.append({QStringLiteral("protocol"), QStringLiteral("协议"), QStringLiteral("warn"), QStringLiteral("HTTP 400"), 400, false});
+    const auto restored = scanResultFromJson(toJson(result));
+    QCOMPARE(restored.profileName, result.profileName);
+    QCOMPARE(restored.model, result.model);
+    QCOMPARE(restored.protocol, result.protocol);
+    QCOMPARE(restored.discoveredModels, result.discoveredModels);
+    QCOMPARE(restored.maxContextLength, result.maxContextLength);
+    QVERIFY(restored.modelsSupported);
+    QVERIFY(restored.streamSupported);
+    QVERIFY(restored.usageSupported);
+    QVERIFY(restored.streamOptionsSupported);
+    QVERIFY(!restored.htmlIntercepted);
+    QCOMPARE(restored.checks.size(), 2);
+    QCOMPARE(restored.checks.at(0).httpStatus, 200);
+    QCOMPARE(restored.checks.at(1).status, QStringLiteral("warn"));
+    QCOMPARE(restored.score(), 50);
+}void timingSerialization(){
     TestResult result;
     result.metrics.timing.requestMs=12.5;
     result.metrics.timing.firstByteMs=123.0;
