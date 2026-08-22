@@ -71,6 +71,7 @@ private slots:
 private:
     struct Plan {
         QString id;
+        QString group;
         QString label;
         QNetworkRequest request;
         QByteArray body;

@@ -1,5 +1,6 @@
 ﻿#include "ScanDialog.h"
 #include "services/ScanService.h"
+#include "ui/TitleBar.h"
 #include "i18n/LanguageManager.h"
 #include <QtWidgets>
 

@@ -4,6 +4,9 @@
 #include <QTimer>
 #include <QSignalSpy>
 #include "services/ScanService.h"
+#include "services/ExportService.h"
+#include <QTemporaryDir>
+#include <QFile>
 #include <algorithm>
 #include "domain/Types.h"
 #include "protocol/SseDecoder.h"
@@ -25,7 +28,10 @@ public:
         ServiceUnavailable,
         Delay,
         Disconnect,
+        TruncatedOk,
         DuplicateSse,
+        RepeatedDelta,
+        PlainOnly,
         MissingUsage,
         InvalidJson,
         SplitSse,
@@ -34,12 +40,21 @@ public:
     explicit MockHttpServer(QObject* parent=nullptr):QObject(parent) {
         connect(&server_, &QTcpServer::newConnection, this, &MockHttpServer::accept);
     }
+    ~MockHttpServer() override {
+        // QTcpServer owns accepted sockets. Disconnect callbacks while clients_ is still alive;
+        // otherwise socket destruction can emit disconnected after clients_ has been destroyed.
+        for (auto* socket : clients_.keys()) QObject::disconnect(socket, nullptr, this, nullptr);
+        QObject::disconnect(&server_, nullptr, this, nullptr);
+        server_.close();
+    }
     bool start() { return server_.listen(QHostAddress::LocalHost, 0); }
     quint16 port() const { return server_.serverPort(); }
     int requestCount() const { return requestCount_; }
     QByteArray requestBody(int i) const { return i >= 0 && i < requests_.size() ? requests_[i].body : QByteArray{}; }
+    QByteArray requestPath(int i) const { return i >= 0 && i < requests_.size() ? requests_[i].path : QByteArray{}; }
     void setFaultMode(FaultMode mode) { mode_ = mode; }
     void setDelayMs(int delayMs) { delayMs_ = delayMs; }
+    void setFirstRejectDelayMs(int delayMs) { firstRejectDelayMs_ = delayMs; }
 private:
     struct Request { QByteArray path; QByteArray body; };
     struct ClientState { QByteArray buffer; bool responded=false; };
@@ -49,6 +64,7 @@ private:
     int requestCount_=0;
     FaultMode mode_=FaultMode::Normal;
     int delayMs_=1500;
+    int firstRejectDelayMs_=0;
 
     void accept() {
         while (server_.hasPendingConnections()) {
@@ -81,7 +97,11 @@ private:
         requests_.push_back({path,body});
         ++requestCount_;
         if (mode_ == FaultMode::Normal && requestCount_==1 && body.contains("stream_options")) {
-            send(socket, 400, "application/json", {"{\"error\":{\"type\":\"invalid_request_error\",\"code\":\"stream_options\",\"message\":\"stream_options unsupported\"}}"});
+            auto reject = [this, guarded = QPointer<QTcpSocket>(socket)] {
+                if (guarded) send(guarded, 400, "application/json", {"{\"error\":{\"type\":\"invalid_request_error\",\"code\":\"stream_options\",\"message\":\"stream_options unsupported\"}}"});
+            };
+            if (firstRejectDelayMs_ > 0) QTimer::singleShot(firstRejectDelayMs_, this, reject);
+            else reject();
             return;
         }
         respond(socket);
@@ -119,7 +139,19 @@ private:
             return;
         }
         if (mode_ == FaultMode::Disconnect) {
-            sendPartial(socket, 200, "text/event-stream", "data: {\"id\":\"x\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}");
+            sendPartial(socket, 200, "text/event-stream", "data: {\"id\":\"x\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n");
+            return;
+        }
+        if (mode_ == FaultMode::TruncatedOk) {
+            sendPartial(socket, 200, "text/event-stream", "data: {\"id\":\"x\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\ndata: {\"id\":\"x\",\"choices\":[{\"delta\":{\"content\":\"K\"}}]}\n\n");
+            return;
+        }
+        if (mode_ == FaultMode::PlainOnly && requests_.last().path.startsWith("/v1/")) {
+            send(socket, 404, "application/json", {"{\"error\":{\"message\":\"versioned path unavailable\"}}"});
+            return;
+        }
+        if (mode_ == FaultMode::PlainOnly && requests_.last().path == "/models") {
+            send(socket, 200, "application/json", {"{\"data\":[{\"id\":\"demo\",\"context_length\":131072}]}"});
             return;
         }
         if (mode_ == FaultMode::HtmlWaf) {
@@ -138,11 +170,19 @@ private:
         if (!socket) return;
         if (mode_ == FaultMode::DuplicateSse) {
             send(socket, 200, "text/event-stream", {
-                "data: {\"id\":\"dup\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n",
-                "data: {\"id\":\"dup\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n",
-                "data: {\"id\":\"dup\",\"choices\":[{\"delta\":{\"content\":\"K\"}}]}\n\n",
-                "data: {\"id\":\"dup\",\"choices\":[{\"delta\":{\"content\":\"K\"}}]}\n\n",
+                "id: 1\ndata: {\"id\":\"dup\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n",
+                "id: 1\ndata: {\"id\":\"dup\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n",
+                "id: 2\ndata: {\"id\":\"dup\",\"choices\":[{\"delta\":{\"content\":\"K\"}}]}\n\n",
+                "id: 2\ndata: {\"id\":\"dup\",\"choices\":[{\"delta\":{\"content\":\"K\"}}]}\n\n",
                 "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":2,\"total_tokens\":4}}\n\n",
+                "data: [DONE]\n\n"
+            });
+            return;
+        }
+        if (mode_ == FaultMode::RepeatedDelta) {
+            send(socket, 200, "text/event-stream", {
+                "data: {\"id\":\"x\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n",
+                "data: {\"id\":\"x\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n",
                 "data: [DONE]\n\n"
             });
             return;
@@ -224,11 +264,18 @@ private slots:
     void httpStatusFailures();
     void delayedResponseTimesOut();
     void truncatedStreamIsNotAccepted();
+    void truncatedOkStreamIsNotAccepted();
     void duplicateSseEventsAreDeduplicated();
+    void repeatedDeltaEventsArePreserved();
+    void scanFallsBackToPlainEndpoints();
+    void markdownExportHasConsistentColumns();
     void missingUsageIsEstimated();
     void invalidJsonEventIsRecoverable();
     void splitSseBoundariesAreDecoded();
     void scanCancelStopsFinishedAndFollowupRequests();
+    void fallbackFirstByteMeasuresSuccessfulAttempt();
+    void scanRejectsTruncatedTransport();
+    void scanCheckReadyCanStartNewScan();
 };
 
 void IntegrationTests::openAiFallbackAndStreaming() {
@@ -400,12 +447,68 @@ void IntegrationTests::truncatedStreamIsNotAccepted() {
     QVERIFY(result.output != QStringLiteral("OK"));
 }
 
+
+void IntegrationTests::truncatedOkStreamIsNotAccepted() {
+    MockHttpServer server; QVERIFY(server.start());
+    const auto result = runBenchmark(server, MockHttpServer::FaultMode::TruncatedOk);
+    QCOMPARE(result.output, QStringLiteral("OK"));
+    QVERIFY(result.status == TestStatus::Error || result.status == TestStatus::Timeout);
+    QVERIFY(!result.passed);
+}
+
 void IntegrationTests::duplicateSseEventsAreDeduplicated() {
     MockHttpServer server; QVERIFY(server.start());
     const auto result = runBenchmark(server, MockHttpServer::FaultMode::DuplicateSse);
     QCOMPARE(result.status, TestStatus::Passed);
     QCOMPARE(result.output, QStringLiteral("OK"));
     QVERIFY(result.passed);
+}
+
+
+void IntegrationTests::repeatedDeltaEventsArePreserved() {
+    MockHttpServer server; QVERIFY(server.start());
+    const auto result = runBenchmark(server, MockHttpServer::FaultMode::RepeatedDelta);
+    QCOMPARE(result.output, QStringLiteral("OO"));
+    QCOMPARE(result.status, TestStatus::Failed);
+}
+
+void IntegrationTests::scanFallsBackToPlainEndpoints() {
+    MockHttpServer server; QVERIFY(server.start());
+    server.setFaultMode(MockHttpServer::FaultMode::PlainOnly);
+    Profile profile;
+    profile.name = QStringLiteral("plain-only");
+    profile.baseUrl = QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.port()));
+    profile.apiKey = QStringLiteral("test-key");
+    profile.protocol = Protocol::OpenAI;
+    profile.timeoutSeconds = 2;
+    ScanService service;
+    QSignalSpy spy(&service, &ScanService::finished);
+    service.scan(profile, QStringLiteral("demo"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
+    const auto result = qvariant_cast<ScanResult>(spy.at(0).at(0));
+    QVERIFY(result.modelsSupported);
+    QVERIFY(result.streamSupported);
+    QCOMPARE(result.score(), 100);
+    QVERIFY(std::any_of(result.discoveredModels.cbegin(), result.discoveredModels.cend(), [](const QString& id) { return id == QStringLiteral("demo"); }));
+}
+
+void IntegrationTests::markdownExportHasConsistentColumns() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    TestResult result;
+    result.profileName = QStringLiteral("profile");
+    result.model = QStringLiteral("model");
+    result.status = TestStatus::Passed;
+    const QString path = dir.filePath(QStringLiteral("report.md"));
+    QString error;
+    QVERIFY2(ExportService::markdown(path, {result}, &error), qPrintable(error));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const auto lines = QString::fromUtf8(file.readAll()).split('\n', Qt::SkipEmptyParts);
+    QCOMPARE(lines.size(), 3);
+    auto columns = [](const QString& line) { return line.count('|') - 1; };
+    QCOMPARE(columns(lines[0]), columns(lines[1]));
+    QCOMPARE(columns(lines[1]), columns(lines[2]));
 }
 
 void IntegrationTests::missingUsageIsEstimated() {
@@ -454,6 +557,64 @@ void IntegrationTests::scanCancelStopsFinishedAndFollowupRequests() {
     QCOMPARE(finished.count(), 0);
     QCOMPARE(server.requestCount(), 1);
     QVERIFY(!service.running());
+}
+
+
+void IntegrationTests::fallbackFirstByteMeasuresSuccessfulAttempt() {
+    MockHttpServer server; QVERIFY(server.start());
+    server.setFirstRejectDelayMs(180);
+    const auto result = runBenchmark(server, MockHttpServer::FaultMode::Normal);
+    QCOMPARE(result.status, TestStatus::Passed);
+    QVERIFY(result.metrics.totalLatencyMs >= 150.0);
+    QVERIFY2(result.metrics.firstByteMs >= 0.0 && result.metrics.firstByteMs < 100.0,
+             qPrintable(QStringLiteral("firstByte=%1 total=%2").arg(result.metrics.firstByteMs).arg(result.metrics.totalLatencyMs)));
+}
+
+void IntegrationTests::scanRejectsTruncatedTransport() {
+    MockHttpServer server; QVERIFY(server.start());
+    server.setFaultMode(MockHttpServer::FaultMode::TruncatedOk);
+    Profile profile;
+    profile.name = QStringLiteral("truncated-scan");
+    profile.baseUrl = QUrl(QStringLiteral("http://127.0.0.1:%1").arg(server.port()));
+    profile.apiKey = QStringLiteral("test-key");
+    profile.timeoutSeconds = 2;
+    ScanService service;
+    QSignalSpy spy(&service, &ScanService::finished);
+    service.scan(profile, QStringLiteral("demo"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
+    const auto result = qvariant_cast<ScanResult>(spy.at(0).at(0));
+    QVERIFY(!result.streamSupported);
+    QVERIFY(std::none_of(result.checks.cbegin(), result.checks.cend(), [](const ScanCheck& check) {
+        return check.category == QStringLiteral("protocol") && check.passed;
+    }));
+}
+
+void IntegrationTests::scanCheckReadyCanStartNewScan() {
+    MockHttpServer first; QVERIFY(first.start());
+    MockHttpServer second; QVERIFY(second.start());
+    first.setFaultMode(MockHttpServer::FaultMode::PlainOnly);
+    second.setFaultMode(MockHttpServer::FaultMode::PlainOnly);
+    Profile initial;
+    initial.name = QStringLiteral("initial");
+    initial.baseUrl = QUrl(QStringLiteral("http://127.0.0.1:%1").arg(first.port()));
+    initial.apiKey = QStringLiteral("test-key");
+    initial.timeoutSeconds = 2;
+    Profile replacement = initial;
+    replacement.name = QStringLiteral("replacement");
+    replacement.baseUrl = QUrl(QStringLiteral("http://127.0.0.1:%1").arg(second.port()));
+    ScanService service;
+    QSignalSpy finished(&service, &ScanService::finished);
+    bool restarted = false;
+    connect(&service, &ScanService::checkReady, &service, [&](const ScanCheck&) {
+        if (!restarted) {
+            restarted = true;
+            service.scan(replacement, QStringLiteral("demo"));
+        }
+    });
+    service.scan(initial, QStringLiteral("demo"));
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+    const auto result = qvariant_cast<ScanResult>(finished.at(0).at(0));
+    QCOMPARE(result.profileName, QStringLiteral("replacement"));
 }
 
 void IntegrationTests::baseUrlWithoutV1IsAutoDetected() {

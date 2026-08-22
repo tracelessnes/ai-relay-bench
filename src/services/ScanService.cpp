@@ -1,5 +1,6 @@
 #include "ScanService.h"
 #include "protocol/ProtocolAdapter.h"
+#include "protocol/SseDecoder.h"
 #include "security/RedactionService.h"
 
 #include <QJsonArray>
@@ -164,6 +165,7 @@ void ScanService::buildPlans() {
     for (const auto& url : adapter->modelUrls(profile_)) {
         Plan plan;
         plan.id = QStringLiteral("models-%1").arg(modelIndex++);
+        plan.group = QStringLiteral("models");
         plan.label = QStringLiteral("模型接口 %1").arg(url.path());
         plan.request = QNetworkRequest(url);
         plan.request.setRawHeader("Accept", "application/json");
@@ -177,18 +179,20 @@ void ScanService::buildPlans() {
     config.prompt = QStringLiteral("请只回复 OK");
     config.maxTokens = 8;
     const auto attempts = adapter->completionAttempts(profile_, config);
-    if (attempts.isEmpty()) return;
-    const auto& attempt = attempts.first();
-    Plan plan;
-    plan.id = QStringLiteral("protocol");
-    plan.label = QStringLiteral("%1 流式接口").arg(protocolName(profile_.protocol));
-    plan.request = QNetworkRequest(attempt.url);
-    for (const auto& header : attempt.headers) plan.request.setRawHeader(header.first, header.second);
-    plan.body = attempt.body;
-    plan.stream = attempt.streaming;
-    plan.streamOptions = plan.body.contains("stream_options");
-    plan.request.setTransferTimeout(qMax(1000, profile_.timeoutSeconds * 1000));
-    plans_.append(plan);
+    for (int index = 0; index < attempts.size(); ++index) {
+        const auto& attempt = attempts.at(index);
+        Plan plan;
+        plan.id = QStringLiteral("protocol-%1").arg(index);
+        plan.group = QStringLiteral("protocol");
+        plan.label = QStringLiteral("%1 流式接口 %2").arg(protocolName(profile_.protocol), attempt.label);
+        plan.request = QNetworkRequest(attempt.url);
+        for (const auto& header : attempt.headers) plan.request.setRawHeader(header.first, header.second);
+        plan.body = attempt.body;
+        plan.stream = attempt.streaming;
+        plan.streamOptions = plan.body.contains("stream_options");
+        plan.request.setTransferTimeout(qMax(1000, profile_.timeoutSeconds * 1000));
+        plans_.append(plan);
+    }
 }
 
 void ScanService::sendNext() {
@@ -233,14 +237,29 @@ void ScanService::onFinished() {
 
 void ScanService::finishCurrent(const ScanCheck& check) {
     if (!running_) return;
-    result_.checks.append(check);
-    emit checkReady(check);
     const quint64 generation = generation_;
+    const auto currentGroup = plans_.value(planIndex_).group;
+    const bool hasAlternative = planIndex_ + 1 < plans_.size()
+        && plans_.at(planIndex_ + 1).group == currentGroup;
+    const bool fallbackStatus = check.httpStatus == 404 || check.httpStatus == 405 || check.httpStatus == 0
+        || (currentGroup == QStringLiteral("protocol") && plans_.at(planIndex_).streamOptions
+            && (check.httpStatus == 400 || check.httpStatus == 422));
+
+    if (check.passed) {
+        result_.checks.append(check);
+        emit checkReady(check);
+        if (!running_ || generation_ != generation) return;
+        while (planIndex_ + 1 < plans_.size() && plans_.at(planIndex_ + 1).group == currentGroup) ++planIndex_;
+    } else if (!(hasAlternative && fallbackStatus)) {
+        result_.checks.append(check);
+        emit checkReady(check);
+        if (!running_ || generation_ != generation) return;
+    }
+
     QTimer::singleShot(0, this, [this, generation] {
         if (running_ && generation_ == generation) sendNext();
     });
 }
-
 ScanCheck ScanService::classifyCurrent(int status, const QByteArray& body, const QString& reason,
                                        const QString& transportError) {
     const auto& plan = plans_.at(planIndex_);
@@ -248,57 +267,78 @@ ScanCheck ScanService::classifyCurrent(int status, const QByteArray& body, const
     check.id = plan.id;
     check.label = plan.label;
     check.httpStatus = status;
-    check.category = plan.id.startsWith(QStringLiteral("models")) ? QStringLiteral("models") : QStringLiteral("protocol");
-    if (status >= 200 && status < 300 && !isHtml(body)) {
+    check.category = plan.group;
+
+    if (status == 0 && !transportError.isEmpty()) {
+        check.status = QStringLiteral("fail");
+        check.category = QStringLiteral("network");
+        check.detail = QStringLiteral("\u7f51\u7edc\u9519\u8bef\uff1a%1").arg(transportError);
+        return check;
+    }
+    if (isHtml(body)) {
+        check.status = QStringLiteral("fail");
+        check.category = QStringLiteral("html-waf");
+        check.detail = QStringLiteral("HTTP %1 %2\uff1a\u68c0\u6d4b\u5230 HTML/WAF \u62e6\u622a\u9875\uff1a%3")
+                           .arg(status).arg(reason, bodySummary(body));
+        result_.htmlIntercepted = true;
+        return check;
+    }
+    if (status >= 200 && status < 300) {
         check.status = QStringLiteral("pass");
         check.passed = true;
-        if (check.category == QStringLiteral("models")) {
+        if (plan.group == QStringLiteral("models")) {
             QString error;
             const auto adapter = ProtocolAdapter::create(profile_.protocol);
             const auto models = adapter->parseModels(body, &error);
-            check.detail = models.isEmpty() ? QStringLiteral("模型解析失败：%1").arg(error)
-                                             : QStringLiteral("发现 %1 个模型").arg(models.size());
             if (models.isEmpty()) {
                 check.status = QStringLiteral("warn");
                 check.passed = false;
+                check.detail = QStringLiteral("\u6a21\u578b\u89e3\u6790\u5931\u8d25\uff1a%1").arg(error);
             } else {
                 result_.modelsSupported = true;
+                check.detail = QStringLiteral("\u53d1\u73b0 %1 \u4e2a\u6a21\u578b").arg(models.size());
                 for (const auto& model : models) {
                     if (!result_.discoveredModels.contains(model.id)) result_.discoveredModels.append(model.id);
                     result_.maxContextLength = qMax(result_.maxContextLength, model.contextLength);
                 }
             }
         } else {
-            result_.streamSupported = plan.stream && (body.contains("data:") || body.contains("output_text") || body.contains("message_start"));
-            result_.usageSupported = body.contains("usage") || body.contains("input_tokens") || body.contains("output_tokens");
-            result_.streamOptionsSupported = plan.streamOptions;
-            check.detail = result_.streamSupported
+            SseDecoder decoder;
+            AdapterState state;
+            bool hasDelta = false;
+            bool completed = false;
+            const auto adapter = ProtocolAdapter::create(profile_.protocol);
+            const auto events = decoder.feed(body) + decoder.finish();
+            for (const auto& event : events) {
+                const auto parsed = adapter->parseSse(event, state);
+                if (parsed.error.isEmpty()) {
+                    hasDelta = hasDelta || !parsed.delta.isEmpty();
+                    completed = completed || parsed.completed;
+                    if (parsed.usageChanged) result_.usageSupported = true;
+                }
+            }
+            const bool validStream = plan.stream && hasDelta && completed;
+            result_.streamSupported = result_.streamSupported || validStream;
+            result_.usageSupported = result_.usageSupported || body.contains("usage")
+                || body.contains("input_tokens") || body.contains("output_tokens");
+            result_.streamOptionsSupported = result_.streamOptionsSupported || (validStream && plan.streamOptions);
+            check.passed = validStream;
+            check.status = validStream ? QStringLiteral("pass") : QStringLiteral("warn");
+            check.detail = validStream
                 ? QStringLiteral("\u6d41\u5f0f\u54cd\u5e94\u53ef\u7528")
-                : QStringLiteral("HTTP %1\uff0c\u4f46\u672a\u68c0\u6d4b\u5230 SSE \u6d41\u5f0f\u4e8b\u4ef6").arg(status);
-            if (!result_.streamSupported) check.status = QStringLiteral("warn");
+                : QStringLiteral("HTTP %1\uff0c\u672a\u68c0\u6d4b\u5230\u5b8c\u6574 SSE \u6d41\u5f0f\u4e8b\u4ef6").arg(status);
         }
-    } else if (isHtml(body)) {
-        check.status = QStringLiteral("fail");
-        check.category = QStringLiteral("html-waf");
-        check.detail = QStringLiteral("HTTP %1 %2\uff1a\u68c0\u6d4b\u5230 HTML/WAF \u62e6\u622a\u9875\uff1a%3").arg(status).arg(reason, bodySummary(body));
-        check.passed = false;
-        result_.htmlIntercepted = true;
-    } else if (status == 0) {
-        check.status = QStringLiteral("fail");
-        check.category = QStringLiteral("network");
-        check.detail = QStringLiteral("\u7f51\u7edc\u9519\u8bef\uff1a%1").arg(transportError.isEmpty() ? bodySummary(body) : transportError);
-    } else {
-        check.status = status == 404 || status == 405 ? QStringLiteral("warn") : QStringLiteral("fail");
-        check.category = status == 401 || status == 403 ? QStringLiteral("auth")
-                         : status == 429 ? QStringLiteral("rate-limit")
-                         : status >= 500 ? QStringLiteral("upstream") : QStringLiteral("http");
-        check.passed = false;
-        const auto structured = structuredError(body);
-        check.detail = QStringLiteral("HTTP %1 %2\uff1a%3").arg(status).arg(reason, structured.isEmpty() ? bodySummary(body) : structured);
+        return check;
     }
+
+    check.status = status == 404 || status == 405 ? QStringLiteral("warn") : QStringLiteral("fail");
+    check.category = status == 401 || status == 403 ? QStringLiteral("auth")
+                     : status == 429 ? QStringLiteral("rate-limit")
+                     : status >= 500 ? QStringLiteral("upstream") : plan.group;
+    const auto structured = structuredError(body);
+    check.detail = QStringLiteral("HTTP %1 %2\uff1a%3").arg(status).arg(reason, structured.isEmpty() ? bodySummary(body) : structured);
     return check;
 }
-
 void ScanService::onTimeout() {
     if (!reply_ || !running_) return;
     reply_->abort();

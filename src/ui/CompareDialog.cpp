@@ -1,6 +1,7 @@
 ﻿#include "CompareDialog.h"
 #include "domain/Statistics.h"
 #include "i18n/LanguageManager.h"
+#include "ui/TitleBar.h"
 #include <QtWidgets>
 namespace airb {
 CompareDialog::CompareDialog(const QList<TestResult>& results, QWidget* parent) : QDialog(parent) {

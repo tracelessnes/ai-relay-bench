@@ -1,58 +1,406 @@
 #include "BenchmarkJob.h"
+
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QRegularExpression>
 #include <QNetworkProxy>
-#include <QMimeDatabase>
+#include <QRegularExpression>
+
 #include "security/RedactionService.h"
 
 namespace airb {
 namespace {
-void configureProxy(QNetworkAccessManager&m,const Profile&p){if(p.proxy.mode==ProxyMode::None)m.setProxy(QNetworkProxy::NoProxy);else if(p.proxy.mode==ProxyMode::System)m.setProxy(QNetworkProxy::DefaultProxy);else m.setProxy(QNetworkProxy(p.proxy.mode==ProxyMode::Http?QNetworkProxy::HttpProxy:QNetworkProxy::Socks5Proxy,p.proxy.host,p.proxy.port,p.proxy.username,p.proxy.password));}
-bool looksHtml(const QByteArray&b){const auto x=b.left(1024).trimmed().toLower();return x.startsWith("<!doctype html")||x.startsWith("<html")||x.contains("<title>cloudflare")||x.contains("cf-ray");}
+void configureProxy(QNetworkAccessManager& manager, const Profile& profile) {
+    if (profile.proxy.mode == ProxyMode::None) {
+        manager.setProxy(QNetworkProxy::NoProxy);
+    } else if (profile.proxy.mode == ProxyMode::System) {
+        manager.setProxy(QNetworkProxy::DefaultProxy);
+    } else {
+        manager.setProxy(QNetworkProxy(profile.proxy.mode == ProxyMode::Http
+                                          ? QNetworkProxy::HttpProxy
+                                          : QNetworkProxy::Socks5Proxy,
+                                      profile.proxy.host, profile.proxy.port,
+                                      profile.proxy.username, profile.proxy.password));
+    }
 }
-BenchmarkJob::BenchmarkJob(Profile p,RequestConfig c,QObject* parent):QObject(parent),profile_(std::move(p)),config_(std::move(c)),id_(QUuid::createUuid().toString(QUuid::WithoutBraces)),adapter_(ProtocolAdapter::create(profile_.protocol)){
- timeoutTimer_.setSingleShot(true);connect(&timeoutTimer_,&QTimer::timeout,this,&BenchmarkJob::onTimeout);configureProxy(manager_,profile_);
+
+bool looksHtml(const QByteArray& body) {
+    const auto lower = body.left(1024).trimmed().toLower();
+    return lower.startsWith("<!doctype html") || lower.startsWith("<html")
+        || lower.contains("<title>cloudflare") || lower.contains("cf-ray");
 }
-void BenchmarkJob::start(){attempts_=adapter_->completionAttempts(profile_,config_);overallClock_.start();if(attempts_.isEmpty()){auto r=makeResult();r.error.message="未生成可用的请求方案";complete(r);return;}emit started(id_,attempts_.first().label);QTimer::singleShot(0,this,&BenchmarkJob::sendAttempt);}
-void BenchmarkJob::cancel(){if(finished_)return;if(reply_){disconnect(reply_,nullptr,this,nullptr);reply_->abort();reply_->deleteLater();reply_=nullptr;}timeoutTimer_.stop();appendAttemptRaw();complete(makeResult(TestStatus::Cancelled));}
-void BenchmarkJob::sendAttempt(){if(finished_)return;if(attemptIndex_>=attempts_.size()){auto r=makeResult();r.error.message="没有成功的兼容接口或请求方案";complete(r);return;}beginAttempt();}
-void BenchmarkJob::beginAttempt(){
- const auto&a=attempts_[attemptIndex_];emit progress(id_,QString("连接中 · %1 · %2").arg(a.label,a.url.toString()));QNetworkRequest req(a.url);for(const auto&h:a.headers)req.setRawHeader(h.first,h.second);req.setTransferTimeout(qMax(1000,profile_.timeoutSeconds*1000));
- reply_=manager_.post(req,a.body);attemptRaw_.clear();output_.clear();decoder_.reset();parserState_={};finishedAttemptNs_=-1;streamCompleted_=false;lastEventSignature_.clear();attemptClock_.restart();timeoutTimer_.start(qMax(1000,profile_.timeoutSeconds*1000));
- connect(reply_,&QNetworkReply::readyRead,this,&BenchmarkJob::onReadyRead);connect(reply_,&QNetworkReply::finished,this,&BenchmarkJob::onFinished);
+} // namespace
+
+BenchmarkJob::BenchmarkJob(Profile profile, RequestConfig config, QObject* parent)
+    : QObject(parent), profile_(std::move(profile)), config_(std::move(config)),
+      id_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+      adapter_(ProtocolAdapter::create(profile_.protocol)) {
+    timeoutTimer_.setSingleShot(true);
+    connect(&timeoutTimer_, &QTimer::timeout, this, &BenchmarkJob::onTimeout);
+    configureProxy(manager_, profile_);
 }
-void BenchmarkJob::onReadyRead(){if(finished_||!reply_)return;const auto b=reply_->readAll();if(b.isEmpty())return;if(firstByteNs_<0)firstByteNs_=overallClock_.nsecsElapsed();attemptRaw_+=b;transferredBytes_+=b.size();if(attempts_.value(attemptIndex_).streaming&&!looksHtml(attemptRaw_)){if(!handleEvents(decoder_.feed(b)))return;}}
-bool BenchmarkJob::handleEvents(const QList<SseEvent>&events){
- for(const auto&e:events){
-  const QByteArray signature = e.event + '\n' + e.id + '\n' + e.data;
-  if (!signature.isEmpty() && signature == lastEventSignature_) continue;
-  lastEventSignature_ = signature;
-  const auto ev=adapter_->parseSse(e,parserState_);if(!ev.error.isEmpty()){if(ev.recoverable){warnings_.push_back(ev.error);continue;}auto r=makeResult(TestStatus::Error);r.error.message=ev.error;r.error.rawSummary=QString::fromUtf8(attemptRaw_.left(4096));if(reply_){disconnect(reply_,nullptr,this,nullptr);reply_->abort();reply_->deleteLater();reply_=nullptr;}timeoutTimer_.stop();appendAttemptRaw();complete(r);return false;}
-  if(!ev.delta.isEmpty()){if(firstTextNs_<0){firstTextNs_=overallClock_.nsecsElapsed();emit progress(id_,"流式生成");}output_+=ev.delta;emit delta(id_,ev.delta);}if(ev.usageChanged)parserState_.usage=ev.usage;if(ev.completed)streamCompleted_=true;
- }
- return true;
+
+void BenchmarkJob::start() {
+    attempts_ = adapter_->completionAttempts(profile_, config_);
+    overallClock_.start();
+    if (attempts_.isEmpty()) {
+        auto result = makeResult();
+        result.error.message = QStringLiteral("\u672a\u751f\u6210\u53ef\u7528\u7684\u8bf7\u6c42\u65b9\u6848");
+        complete(result);
+        return;
+    }
+    emit started(id_, attempts_.first().label);
+    QTimer::singleShot(0, this, &BenchmarkJob::sendAttempt);
 }
-void BenchmarkJob::appendAttemptRaw(){if(attemptRaw_.isEmpty())return;const auto&a=attempts_.value(attemptIndex_);combinedRaw_+="===== Attempt "+QByteArray::number(attemptIndex_+1)+" · "+a.label.toUtf8()+" · "+a.url.toString().toUtf8()+" =====\n"+attemptRaw_+"\n\n";attemptRaw_.clear();}
-int BenchmarkJob::nextRetryIndex(int status,bool networkError)const{int next=attemptIndex_+1;if(status==404||status==405||networkError){const auto failed=attempts_.value(attemptIndex_).url;while(next<attempts_.size()&&attempts_[next].url==failed)++next;}return next;}
-void BenchmarkJob::onFinished(){
- if(finished_||!reply_)return;timeoutTimer_.stop();const auto tail=reply_->readAll();attemptRaw_+=tail;transferredBytes_+=tail.size();finishedAttemptNs_=attemptClock_.nsecsElapsed();const int status=reply_->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();const auto netError=reply_->error();const bool net=netError!=QNetworkReply::NoError&&status==0;const QString reason=reply_->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();const auto contentType=reply_->header(QNetworkRequest::ContentTypeHeader).toString().toLower();const auto body=attemptRaw_;const auto a=attempts_.value(attemptIndex_);reply_->deleteLater();reply_=nullptr;
- if(net||status>=400||status==0){const bool retry=adapter_->shouldRetry(a,status,body,net);if(retry){int next=attemptIndex_+1;if(status==404||status==405||net){while(next<attempts_.size()&&attempts_[next].url==a.url)++next;}if(next<attempts_.size()){warnings_<<QString("第 %1 次尝试失败（%2%3），回退到 %4").arg(attemptIndex_+1).arg(status).arg(net?"，网络错误":"").arg(attempts_[next].label);appendAttemptRaw();attemptIndex_=next;QTimer::singleShot(0,this,&BenchmarkJob::sendAttempt);return;}}auto r=makeResult(netError==QNetworkReply::TimeoutError?TestStatus::Timeout:TestStatus::Error);r.error=parseError(status,body,reason,net);appendAttemptRaw();complete(r);return;}
- if(looksHtml(body)||contentType.contains("text/html")){auto r=makeResult(TestStatus::Error);r.error=parseError(status,body,reason,false);r.error.html=true;r.error.message="接口返回了 HTML 页面，而不是 API 响应";appendAttemptRaw();complete(r);return;}
- if(a.streaming){if(!handleEvents(decoder_.finish()))return;if(output_.isEmpty()&&!body.trimmed().isEmpty()){const auto ev=adapter_->parseNonStream(body,parserState_);if(!ev.error.isEmpty()){auto r=makeResult(TestStatus::Error);r.error.message=ev.error;r.error.rawSummary=QString::fromUtf8(body.left(4096));appendAttemptRaw();complete(r);return;}if(!ev.delta.isEmpty()){if(firstTextNs_<0)firstTextNs_=overallClock_.nsecsElapsed();output_+=ev.delta;emit delta(id_,ev.delta);}if(ev.usageChanged)parserState_.usage=ev.usage;warnings_<<"服务器返回普通 JSON/非 SSE 内容，已按非流式响应解析";}}
- else{const auto ev=adapter_->parseNonStream(body,parserState_);if(!ev.error.isEmpty()){auto r=makeResult(TestStatus::Error);r.error.message=ev.error;r.error.rawSummary=QString::fromUtf8(body.left(4096));appendAttemptRaw();complete(r);return;}if(!ev.delta.isEmpty()){if(firstTextNs_<0)firstTextNs_=overallClock_.nsecsElapsed();output_+=ev.delta;emit delta(id_,ev.delta);}if(ev.usageChanged)parserState_.usage=ev.usage;warnings_<<"服务器不支持流式，已回退为非流式请求";}
- if(parserState_.usage.promptTokens<0)parserState_.usage.promptTokens=estimateTokens(config_.prompt);if(parserState_.usage.completionTokens<0)parserState_.usage.completionTokens=estimateTokens(output_);if(parserState_.usage.totalTokens<0)parserState_.usage.totalTokens=parserState_.usage.promptTokens+parserState_.usage.completionTokens;if(!parserState_.usage.exact)parserState_.usage.source="estimated";
- auto r=makeResult(matches(output_)?TestStatus::Passed:TestStatus::Failed);r.passed=matches(output_);r.metrics.usage=parserState_.usage;r.estimated=!parserState_.usage.exact;appendAttemptRaw();complete(r);
+
+void BenchmarkJob::cancel() {
+    if (finished_) return;
+    if (reply_) {
+        disconnect(reply_, nullptr, this, nullptr);
+        reply_->abort();
+        reply_->deleteLater();
+        reply_ = nullptr;
+    }
+    timeoutTimer_.stop();
+    appendAttemptRaw();
+    complete(makeResult(TestStatus::Cancelled));
 }
-void BenchmarkJob::onTimeout(){if(finished_)return;timeoutTimer_.stop();if(reply_){const auto tail=reply_->readAll();attemptRaw_+=tail;transferredBytes_+=tail.size();disconnect(reply_,nullptr,this,nullptr);reply_->abort();reply_->deleteLater();reply_=nullptr;}finishedAttemptNs_=attemptClock_.isValid()?attemptClock_.nsecsElapsed():-1;auto r=makeResult(TestStatus::Timeout);r.error.timeout=true;r.error.network=true;r.error.message=QString("请求在 %1 秒后超时").arg(profile_.timeoutSeconds);appendAttemptRaw();complete(r);}
-void BenchmarkJob::complete(TestResult r){if(finished_)return;finished_=true;timeoutTimer_.stop();if(!warnings_.isEmpty()){r.note=warnings_.join(" · ");}r.rawResponse=RedactionService::text(QString::fromUtf8(combinedRaw_.left(4*1024*1024)));if(!attemptRaw_.isEmpty()){QByteArray x=combinedRaw_;const auto&a=attempts_.value(attemptIndex_);x+="===== Attempt "+QByteArray::number(attemptIndex_+1)+" · "+a.label.toUtf8()+" · "+a.url.toString().toUtf8()+" =====\n"+attemptRaw_;r.rawResponse=RedactionService::text(QString::fromUtf8(x.left(4*1024*1024)));}emit finished(r);deleteLater();}
-ErrorInfo BenchmarkJob::parseError(int status,const QByteArray&body,const QString&reason,bool network)const{ErrorInfo e;e.httpStatus=status;e.reason=reason;e.network=network;e.rawSummary=RedactionService::text(QString::fromUtf8(body.left(4096))).trimmed();e.html=looksHtml(body);QJsonParseError pe;const auto d=QJsonDocument::fromJson(body,&pe);if(pe.error==QJsonParseError::NoError&&d.isObject()){const auto o=d.object();const auto value=o.value("error");if(value.isObject()){const auto x=value.toObject();e.message=x.value("message").toString();e.type=x.value("type").toString();e.code=x.value("code").toVariant().toString();}else if(value.isString())e.message=value.toString();if(e.message.isEmpty())e.message=o.value("message").toString(o.value("detail").toString());}if(e.message.isEmpty())e.message=e.html?QStringLiteral("HTML/WAF 拦截页：")+e.rawSummary.left(512):(network?QStringLiteral("网络错误"):(e.rawSummary.isEmpty()?QStringLiteral("HTTP %1").arg(status):e.rawSummary.left(512)));return e;}
-TestResult BenchmarkJob::makeResult(TestStatus status)const{TestResult r;r.profileName=profile_.name;r.model=config_.model;r.protocol=profile_.protocol;r.status=status;r.output=output_;r.endpoint=attempts_.value(attemptIndex_).url.toString();r.metrics.responseBytes=transferredBytes_;r.metrics.usage=parserState_.usage;const qint64 overallEnd=overallClock_.isValid()?overallClock_.nsecsElapsed():0;if(firstByteNs_>=0)r.metrics.firstByteMs=firstByteNs_/1e6;if(firstTextNs_>=0){r.metrics.ttftMs=firstTextNs_/1e6;r.metrics.generationMs=qMax<qint64>(0,overallEnd-firstTextNs_)/1e6;}r.metrics.totalLatencyMs=overallEnd/1e6;
- r.metrics.timing.firstByteMs=r.metrics.firstByteMs;
- r.metrics.timing.firstTextMs=r.metrics.ttftMs;
- r.metrics.timing.generationMs=r.metrics.generationMs;
- r.metrics.timing.totalMs=r.metrics.totalLatencyMs;
- r.metrics.timing.requestMs=r.metrics.firstByteMs>=0?r.metrics.firstByteMs:r.metrics.totalLatencyMs;
- const auto completion=parserState_.usage.completionTokens>=0?parserState_.usage.completionTokens:estimateTokens(output_);if(r.metrics.generationMs>0&&completion>0)r.metrics.tokensPerSecond=completion/(r.metrics.generationMs/1000.0);return r;}
-bool BenchmarkJob::matches(const QString&text)const{const QString t=sanitizeOutput(text);if(config_.matchRegex.isEmpty())return t=="OK";const auto opts=config_.caseSensitive?QRegularExpression::NoPatternOption:QRegularExpression::CaseInsensitiveOption;const QRegularExpression re(config_.matchRegex,opts);if(!re.isValid())return false;const auto m=re.match(t);return m.hasMatch()&&m.capturedStart()==0&&m.capturedLength()==t.size();}
+
+void BenchmarkJob::sendAttempt() {
+    if (finished_) return;
+    if (attemptIndex_ >= attempts_.size()) {
+        auto result = makeResult();
+        result.error.message = QStringLiteral("\u6ca1\u6709\u6210\u529f\u7684\u517c\u5bb9\u63a5\u53e3\u6216\u8bf7\u6c42\u65b9\u6848");
+        complete(result);
+        return;
+    }
+    beginAttempt();
 }
+
+void BenchmarkJob::beginAttempt() {
+    const auto& attempt = attempts_[attemptIndex_];
+    emit progress(id_, QStringLiteral("\u8fde\u63a5\u4e2d \u00b7 %1 \u00b7 %2")
+                          .arg(attempt.label, attempt.url.toString()));
+
+    QNetworkRequest request(attempt.url);
+    for (const auto& header : attempt.headers) request.setRawHeader(header.first, header.second);
+    request.setTransferTimeout(qMax(1000, profile_.timeoutSeconds * 1000));
+
+    reply_ = manager_.post(request, attempt.body);
+    attemptRaw_.clear();
+    output_.clear();
+    decoder_.reset();
+    parserState_ = {};
+    firstByteNs_ = -1;
+    firstTextNs_ = -1;
+    finishedAttemptNs_ = -1;
+    streamCompleted_ = false;
+    seenEventSignatures_.clear();
+    attemptClock_.restart();
+    timeoutTimer_.start(qMax(1000, profile_.timeoutSeconds * 1000));
+
+    connect(reply_, &QNetworkReply::readyRead, this, &BenchmarkJob::onReadyRead);
+    connect(reply_, &QNetworkReply::finished, this, &BenchmarkJob::onFinished);
+}
+
+void BenchmarkJob::onReadyRead() {
+    if (finished_ || !reply_) return;
+    const auto bytes = reply_->readAll();
+    if (bytes.isEmpty()) return;
+    if (firstByteNs_ < 0) firstByteNs_ = attemptClock_.nsecsElapsed();
+    attemptRaw_ += bytes;
+    transferredBytes_ += bytes.size();
+    if (attempts_.value(attemptIndex_).streaming && !looksHtml(attemptRaw_)) {
+        if (!handleEvents(decoder_.feed(bytes))) return;
+    }
+}
+
+bool BenchmarkJob::handleEvents(const QList<SseEvent>& events) {
+    for (const auto& event : events) {
+        // SSE id is the only transport-level identity we can trust for replay deduplication.
+        // A repeated payload without an SSE id is valid model output and must be preserved.
+        if (!event.id.isEmpty()) {
+            const QByteArray signature = event.event + '\n' + event.id + '\n' + event.data;
+            if (seenEventSignatures_.contains(signature)) continue;
+            seenEventSignatures_.insert(signature);
+        }
+
+        const auto parsed = adapter_->parseSse(event, parserState_);
+        if (!parsed.error.isEmpty()) {
+            if (parsed.recoverable) {
+                warnings_.push_back(parsed.error);
+                continue;
+            }
+            auto result = makeResult(TestStatus::Error);
+            result.error.message = parsed.error;
+            result.error.rawSummary = QString::fromUtf8(attemptRaw_.left(4096));
+            if (reply_) {
+                disconnect(reply_, nullptr, this, nullptr);
+                reply_->abort();
+                reply_->deleteLater();
+                reply_ = nullptr;
+            }
+            timeoutTimer_.stop();
+            appendAttemptRaw();
+            complete(result);
+            return false;
+        }
+
+        if (!parsed.delta.isEmpty()) {
+            if (firstTextNs_ < 0) {
+                firstTextNs_ = attemptClock_.nsecsElapsed();
+                emit progress(id_, QStringLiteral("\u6d41\u5f0f\u751f\u6210"));
+            }
+            output_ += parsed.delta;
+            emit delta(id_, parsed.delta);
+        }
+        if (parsed.usageChanged) parserState_.usage = parsed.usage;
+        if (parsed.completed) streamCompleted_ = true;
+    }
+    return true;
+}
+
+void BenchmarkJob::appendAttemptRaw() {
+    if (attemptRaw_.isEmpty()) return;
+    const auto& attempt = attempts_.value(attemptIndex_);
+    combinedRaw_ += "===== Attempt " + QByteArray::number(attemptIndex_ + 1)
+        + " / " + attempt.label.toUtf8() + " / " + attempt.url.toString().toUtf8()
+        + " =====\n" + attemptRaw_ + "\n\n";
+    attemptRaw_.clear();
+}
+
+int BenchmarkJob::nextRetryIndex(int status, bool networkError) const {
+    int next = attemptIndex_ + 1;
+    if (status == 404 || status == 405 || networkError) {
+        const auto failedUrl = attempts_.value(attemptIndex_).url;
+        while (next < attempts_.size() && attempts_[next].url == failedUrl) ++next;
+    }
+    return next;
+}
+
+void BenchmarkJob::onFinished() {
+    if (finished_ || !reply_) return;
+    timeoutTimer_.stop();
+    const auto tail = reply_->readAll();
+    attemptRaw_ += tail;
+    transferredBytes_ += tail.size();
+    finishedAttemptNs_ = attemptClock_.nsecsElapsed();
+
+    const int status = reply_->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const auto networkError = reply_->error();
+    const bool transportFailed = status == 0 && networkError != QNetworkReply::NoError;
+    const QString reason = reply_->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
+    const auto contentType = reply_->header(QNetworkRequest::ContentTypeHeader).toString().toLower();
+    const auto body = attemptRaw_;
+    const auto attempt = attempts_.value(attemptIndex_);
+    reply_->deleteLater();
+    reply_ = nullptr;
+
+    if (transportFailed || status >= 400 || status == 0) {
+        const bool retry = adapter_->shouldRetry(attempt, status, body, transportFailed);
+        const int next = nextRetryIndex(status, transportFailed);
+        if (retry && next < attempts_.size()) {
+            warnings_ << QStringLiteral("\u7b2c %1 \u6b21\u5c1d\u8bd5\u5931\u8d25\uff08%2%3\uff09\uff0c\u56de\u9000\u5230 %4")
+                             .arg(attemptIndex_ + 1)
+                             .arg(status)
+                             .arg(transportFailed ? QStringLiteral("\uff0c\u7f51\u7edc\u9519\u8bef") : QString())
+                             .arg(attempts_[next].label);
+            appendAttemptRaw();
+            attemptIndex_ = next;
+            QTimer::singleShot(0, this, &BenchmarkJob::sendAttempt);
+            return;
+        }
+        auto result = makeResult(networkError == QNetworkReply::TimeoutError
+                                     ? TestStatus::Timeout : TestStatus::Error);
+        result.error = parseError(status, body, reason, transportFailed);
+        appendAttemptRaw();
+        complete(result);
+        return;
+    }
+
+    if (looksHtml(body) || contentType.contains(QStringLiteral("text/html"))) {
+        auto result = makeResult(TestStatus::Error);
+        result.error = parseError(status, body, reason, false);
+        result.error.html = true;
+        result.error.message = QStringLiteral("\u63a5\u53e3\u8fd4\u56de\u4e86 HTML \u9875\u9762\uff0c\u800c\u4e0d\u662f API \u54cd\u5e94");
+        appendAttemptRaw();
+        complete(result);
+        return;
+    }
+
+    if (attempt.streaming) {
+        if (!handleEvents(decoder_.finish())) return;
+        bool parsedNonStream = false;
+        if (output_.isEmpty() && !body.trimmed().isEmpty()) {
+            const auto parsed = adapter_->parseNonStream(body, parserState_);
+            if (!parsed.error.isEmpty()) {
+                auto result = makeResult(TestStatus::Error);
+                result.error.message = parsed.error;
+                result.error.rawSummary = QString::fromUtf8(body.left(4096));
+                appendAttemptRaw();
+                complete(result);
+                return;
+            }
+            if (!parsed.delta.isEmpty()) {
+                if (firstTextNs_ < 0) firstTextNs_ = attemptClock_.nsecsElapsed();
+                output_ += parsed.delta;
+                emit delta(id_, parsed.delta);
+                parsedNonStream = true;
+            }
+            if (parsed.usageChanged) parserState_.usage = parsed.usage;
+            if (parsedNonStream) warnings_ << QStringLiteral("\u670d\u52a1\u5668\u8fd4\u56de\u666e\u901a JSON/\u975e SSE \u5185\u5bb9\uff0c\u5df2\u6309\u975e\u6d41\u5f0f\u54cd\u5e94\u89e3\u6790");
+        }
+        if (!parsedNonStream && !streamCompleted_) {
+            auto result = makeResult(TestStatus::Error);
+            result.error.network = true;
+            result.error.message = QStringLiteral("\u6d41\u5f0f\u54cd\u5e94\u5728\u5b8c\u6210\u4e8b\u4ef6\u524d\u7ed3\u675f\uff0c\u54cd\u5e94\u53ef\u80fd\u5df2\u622a\u65ad");
+            result.error.rawSummary = QString::fromUtf8(body.left(4096));
+            appendAttemptRaw();
+            complete(result);
+            return;
+        }
+    } else {
+        const auto parsed = adapter_->parseNonStream(body, parserState_);
+        if (!parsed.error.isEmpty()) {
+            auto result = makeResult(TestStatus::Error);
+            result.error.message = parsed.error;
+            result.error.rawSummary = QString::fromUtf8(body.left(4096));
+            appendAttemptRaw();
+            complete(result);
+            return;
+        }
+        if (!parsed.delta.isEmpty()) {
+            if (firstTextNs_ < 0) firstTextNs_ = attemptClock_.nsecsElapsed();
+            output_ += parsed.delta;
+            emit delta(id_, parsed.delta);
+        }
+        if (parsed.usageChanged) parserState_.usage = parsed.usage;
+        warnings_ << QStringLiteral("\u670d\u52a1\u5668\u4e0d\u652f\u6301\u6d41\u5f0f\uff0c\u5df2\u56de\u9000\u4e3a\u975e\u6d41\u5f0f\u8bf7\u6c42");
+    }
+
+    if (parserState_.usage.promptTokens < 0) parserState_.usage.promptTokens = estimateTokens(config_.prompt);
+    if (parserState_.usage.completionTokens < 0) parserState_.usage.completionTokens = estimateTokens(output_);
+    if (parserState_.usage.totalTokens < 0) parserState_.usage.totalTokens = parserState_.usage.promptTokens + parserState_.usage.completionTokens;
+    if (!parserState_.usage.exact) parserState_.usage.source = QStringLiteral("estimated");
+
+    auto result = makeResult(matches(output_) ? TestStatus::Passed : TestStatus::Failed);
+    result.passed = matches(output_);
+    result.metrics.usage = parserState_.usage;
+    result.estimated = !parserState_.usage.exact;
+    appendAttemptRaw();
+    complete(result);
+}
+
+void BenchmarkJob::onTimeout() {
+    if (finished_) return;
+    timeoutTimer_.stop();
+    if (reply_) {
+        const auto tail = reply_->readAll();
+        attemptRaw_ += tail;
+        transferredBytes_ += tail.size();
+        disconnect(reply_, nullptr, this, nullptr);
+        reply_->abort();
+        reply_->deleteLater();
+        reply_ = nullptr;
+    }
+    finishedAttemptNs_ = attemptClock_.isValid() ? attemptClock_.nsecsElapsed() : -1;
+    auto result = makeResult(TestStatus::Timeout);
+    result.error.timeout = true;
+    result.error.network = true;
+    result.error.message = QStringLiteral("\u8bf7\u6c42\u5728 %1 \u79d2\u540e\u8d85\u65f6").arg(profile_.timeoutSeconds);
+    appendAttemptRaw();
+    complete(result);
+}
+
+void BenchmarkJob::complete(TestResult result) {
+    if (finished_) return;
+    finished_ = true;
+    timeoutTimer_.stop();
+    if (!warnings_.isEmpty()) result.note = warnings_.join(QStringLiteral(" \u00b7 "));
+    result.rawResponse = RedactionService::text(QString::fromUtf8(combinedRaw_.left(4 * 1024 * 1024)));
+    if (!attemptRaw_.isEmpty()) {
+        QByteArray raw = combinedRaw_;
+        const auto& attempt = attempts_.value(attemptIndex_);
+        raw += "===== Attempt " + QByteArray::number(attemptIndex_ + 1)
+            + " / " + attempt.label.toUtf8() + " / " + attempt.url.toString().toUtf8()
+            + " =====\n" + attemptRaw_;
+        result.rawResponse = RedactionService::text(QString::fromUtf8(raw.left(4 * 1024 * 1024)));
+    }
+    emit finished(result);
+    deleteLater();
+}
+
+ErrorInfo BenchmarkJob::parseError(int status, const QByteArray& body, const QString& reason, bool network) const {
+    ErrorInfo error;
+    error.httpStatus = status;
+    error.reason = reason;
+    error.network = network;
+    error.rawSummary = RedactionService::text(QString::fromUtf8(body.left(4096))).trimmed();
+    error.html = looksHtml(body);
+
+    QJsonParseError parseError;
+    const auto document = QJsonDocument::fromJson(body, &parseError);
+    if (parseError.error == QJsonParseError::NoError && document.isObject()) {
+        const auto object = document.object();
+        const auto value = object.value(QStringLiteral("error"));
+        if (value.isObject()) {
+            const auto detail = value.toObject();
+            error.message = detail.value(QStringLiteral("message")).toString();
+            error.type = detail.value(QStringLiteral("type")).toString();
+            error.code = detail.value(QStringLiteral("code")).toVariant().toString();
+        } else if (value.isString()) {
+            error.message = value.toString();
+        }
+        if (error.message.isEmpty()) error.message = object.value(QStringLiteral("message")).toString(object.value(QStringLiteral("detail")).toString());
+    }
+    if (error.message.isEmpty()) {
+        error.message = error.html
+            ? QStringLiteral("HTML/WAF \u62e6\u622a\u9875\uff1a") + error.rawSummary.left(512)
+            : (network ? QStringLiteral("\u7f51\u7edc\u9519\u8bef")
+                       : (error.rawSummary.isEmpty() ? QStringLiteral("HTTP %1").arg(status) : error.rawSummary.left(512)));
+    }
+    return error;
+}
+
+TestResult BenchmarkJob::makeResult(TestStatus status) const {
+    TestResult result;
+    result.profileName = profile_.name;
+    result.model = config_.model;
+    result.protocol = profile_.protocol;
+    result.status = status;
+    result.output = output_;
+    result.endpoint = attempts_.value(attemptIndex_).url.toString();
+    result.metrics.responseBytes = transferredBytes_;
+    result.metrics.usage = parserState_.usage;
+
+    const qint64 overallEnd = overallClock_.isValid() ? overallClock_.nsecsElapsed() : 0;
+    if (firstByteNs_ >= 0) result.metrics.firstByteMs = firstByteNs_ / 1e6;
+    if (firstTextNs_ >= 0) {
+        result.metrics.ttftMs = firstTextNs_ / 1e6;
+        const qint64 end = finishedAttemptNs_ >= 0 ? finishedAttemptNs_ : attemptClock_.nsecsElapsed();
+        result.metrics.generationMs = qMax<qint64>(0, end - firstTextNs_) / 1e6;
+    }
+    result.metrics.totalLatencyMs = overallEnd / 1e6;
+    result.metrics.timing.firstByteMs = result.metrics.firstByteMs;
+    result.metrics.timing.firstTextMs = result.metrics.ttftMs;
+    result.metrics.timing.generationMs = result.metrics.generationMs;
+    result.metrics.timing.totalMs = result.metrics.totalLatencyMs;
+    result.metrics.timing.requestMs = finishedAttemptNs_ >= 0 ? finishedAttemptNs_ / 1e6 : -1;
+
+    const auto completion = parserState_.usage.completionTokens >= 0
+        ? parserState_.usage.completionTokens : estimateTokens(output_);
+    if (result.metrics.generationMs > 0 && completion > 0)
+        result.metrics.tokensPerSecond = completion / (result.metrics.generationMs / 1000.0);
+    return result;
+}
+
+bool BenchmarkJob::matches(const QString& text) const {
+    const QString sanitized = sanitizeOutput(text);
+    if (config_.matchRegex.isEmpty()) return sanitized == QStringLiteral("OK");
+    const auto options = config_.caseSensitive ? QRegularExpression::NoPatternOption : QRegularExpression::CaseInsensitiveOption;
+    const QRegularExpression expression(config_.matchRegex, options);
+    if (!expression.isValid()) return false;
+    const auto match = expression.match(sanitized);
+    return match.hasMatch() && match.capturedStart() == 0 && match.capturedLength() == sanitized.size();
+}
+
+} // namespace airb

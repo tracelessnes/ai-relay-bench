@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <QTimer>
 #include <QPointer>
+#include <QSet>
 
 namespace airb {
 class BenchmarkJob final : public QObject {
@@ -59,6 +60,6 @@ private:
     QTimer timeoutTimer_;
     bool finished_ = false;
     bool streamCompleted_=false;
-    QByteArray lastEventSignature_;
+    QSet<QByteArray> seenEventSignatures_;
 };
 }

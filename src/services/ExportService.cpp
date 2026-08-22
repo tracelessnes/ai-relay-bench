@@ -75,10 +75,10 @@ bool ExportService::csv(const QString& path, const QList<TestResult>& results, Q
 }
 
 bool ExportService::markdown(const QString& path, const QList<TestResult>& results, QString* error) {
-    QString text = QStringLiteral("| Time | Profile | Protocol | Model | Status | TTFT ms | First byte ms | Generation ms | Total ms | Tokens/s | Usage P/C/T |\n|---|---|---|---|---:|---:|---:|---:|---|\n");
+    QString text = QStringLiteral("| Time | Profile | Protocol | Model | Status | TTFT ms | First byte ms | Generation ms | Total ms | Tokens/s | Usage P/C/T |\n|---|---|---|---|---|---:|---:|---:|---:|---:|---|\n");
     for (const auto& original : results) {
         const auto result = redactedResult(original);
-        text += QStringLiteral("| %1 | %2 | %3 | %4 | %5 | %6 | %7 | %8 | %9 | %10 | %11 | %12/%13/%14 |\n")
+        text += QStringLiteral("| %1 | %2 | %3 | %4 | %5 | %6 | %7 | %8 | %9 | %10 | %11/%12/%13 |\n")
                     .arg(markdownEscape(result.timestamp.toString("HH:mm:ss")), markdownEscape(result.profileName),
                          markdownEscape(protocolName(result.protocol)), markdownEscape(result.model), markdownEscape(statusName(result.status)))
                     .arg(result.metrics.ttftMs, 0, 'f', 1)

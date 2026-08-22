@@ -85,9 +85,11 @@ qt_add_executable(ai-relay-bench-integration-tests
     src/network/BenchmarkJob.cpp
     src/security/RedactionService.cpp
     src/services/ScanService.cpp
+    src/services/ExportService.cpp
 )
 target_include_directories(ai-relay-bench-integration-tests PRIVATE src)
 target_link_libraries(ai-relay-bench-integration-tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)
+target_compile_definitions(ai-relay-bench-integration-tests PRIVATE APP_VERSION="${PROJECT_VERSION}")
 add_test(NAME integration-tests COMMAND ai-relay-bench-integration-tests)
 
 enable_testing()

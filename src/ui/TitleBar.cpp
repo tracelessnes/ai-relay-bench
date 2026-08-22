@@ -10,6 +10,40 @@
 #include <QWindow>
 
 namespace airb {
+DialogTitleBar::DialogTitleBar(QWidget* window, QWidget* parent) : QWidget(parent), window_(window) {
+    setObjectName(QStringLiteral("titleBar"));
+    setFixedHeight(42);
+    auto* layout = new QHBoxLayout(this);
+    layout->setContentsMargins(12, 0, 6, 0);
+    layout->setSpacing(2);
+    auto* mark = new QLabel(QStringLiteral("AI"));
+    mark->setObjectName(QStringLiteral("appMark"));
+    mark->setAlignment(Qt::AlignCenter);
+    mark->setFixedSize(28, 28);
+    title_ = new QLabel;
+    title_->setObjectName(QStringLiteral("windowTitleLabel"));
+    auto* close = new QPushButton(QStringLiteral("?"));
+    close->setObjectName(QStringLiteral("titleBarClose"));
+    close->setFlat(true);
+    close->setCursor(Qt::PointingHandCursor);
+    close->setFixedSize(46, 32);
+    layout->addWidget(mark);
+    layout->addSpacing(8);
+    layout->addWidget(title_);
+    layout->addStretch();
+    layout->addWidget(close);
+    connect(close, &QPushButton::clicked, this, [this] { if (window_) window_->close(); });
+}
+void DialogTitleBar::setTitle(const QString& title) { if (title_) title_->setText(title); }
+void DialogTitleBar::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && window_ && window_->windowHandle()) {
+        window_->windowHandle()->startSystemMove();
+        event->accept();
+        return;
+    }
+    QWidget::mousePressEvent(event);
+}
+
 TitleBar::TitleBar(QWidget* window, QWidget* parent) : QWidget(parent), window_(window) {
     setObjectName(QStringLiteral("titleBar")); setFixedHeight(42); setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto* layout = new QHBoxLayout(this); layout->setContentsMargins(12, 0, 6, 0); layout->setSpacing(2);
