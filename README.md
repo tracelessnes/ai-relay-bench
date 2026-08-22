@@ -1,5 +1,8 @@
 # AI Relay Station Benchmark & Tester
 
+> **Windows only / ??? Windows?** AI Relay Bench is currently distributed and tested as a Windows desktop application. ????? Windows ????? Windows Release ???
+>
+
 一个面向 AI 中转站、自建反代与官方兼容端点的现代化 Qt 6 桌面测速工具。用于验证 OpenAI Chat Completions、Anthropic Claude Messages 与 OpenAI Responses/Codex 三类协议的可用性、流式兼容性、延迟、吞吐和多轮稳定性。
 
 当前版本：**V1.2.0**

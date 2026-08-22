@@ -23,6 +23,7 @@ $version = $versionMatch.Groups["version"].Value
 & $cmake --build $BuildDir -j 4
 & ctest --test-dir $BuildDir --output-on-failure
 $packageName = "AI-Relay-Bench-$version-win64"
+Write-Host "Windows-only package: $packageName"
 $target = Join-Path $DistDir $packageName
 if (Test-Path -LiteralPath $target) {
     $resolved = [IO.Path]::GetFullPath($target)
@@ -33,6 +34,7 @@ if (Test-Path -LiteralPath $target) {
 New-Item -ItemType Directory -Force $target | Out-Null
 Copy-Item -LiteralPath (Join-Path $BuildDir "ai-relay-bench.exe") -Destination $target
 Copy-Item -LiteralPath "README.md" -Destination $target
+Copy-Item -LiteralPath "LICENSE" -Destination $target
 & "$QtRoot\bin\windeployqt.exe" --release --compiler-runtime --no-translations --dir $target (Join-Path $target "ai-relay-bench.exe")
 $zip = Join-Path $DistDir "$packageName.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
 project(AIRelayBench VERSION 1.2.0 LANGUAGES CXX)
 
+if(NOT WIN32)
+    message(FATAL_ERROR "AI Relay Bench is Windows only.")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
