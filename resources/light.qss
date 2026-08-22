@@ -1,6 +1,6 @@
 * { font-family: "Segoe UI", "Microsoft YaHei UI"; font-size: 13px; }
 QWidget { color: #202938; background: transparent; }
-QMainWindow, QDialog, QWidget#appRoot, QWidget#settingsBody { background: #f5f7fb; }
+QMainWindow, QDialog, QWidget#appRoot, QWidget#settingsBody, QWidget#captureBody { background: #f5f7fb; }
 QScrollArea { background: transparent; border: 0; }
 QScrollArea > QWidget > QWidget { background: transparent; }
 QFrame#sidebar, QWidget#sidebar, QGroupBox, QTabWidget::pane { background: #ffffff; border: 1px solid #dbe2ee; border-radius: 8px; }
@@ -40,3 +40,7 @@ QLabel#featureBadge { color: #1d4ed8; background: #dbeafe; padding: 6px 10px; bo
 QLabel#sessionSummary { color: #64748b; background: transparent; padding: 6px; }
 QProgressBar { color: #334155; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 5px; text-align: center; }
 QProgressBar::chunk { background: #2563eb; border-radius: 4px; }
+
+QLabel#captureHint { color: #475569; background: #eef2f7; border: 1px solid #dbe2ee; border-radius: 6px; padding: 8px 10px; }
+QLabel#captureDetailTitle { color: #475569; background: transparent; padding: 2px 0; }
+QTableWidget#captureTable { min-height: 180px; }

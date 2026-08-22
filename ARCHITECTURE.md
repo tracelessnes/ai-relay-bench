@@ -66,3 +66,15 @@ TitleBar / TrendChart ── ThemeManager ── light.qss / dark.qss
 ## CI 与发布
 
 GitHub Actions 的 Windows 工作流使用 Qt 6.7.3 MinGW，执行 CMake Release 构建、CTest 和敏感信息扫描。发布脚本从顶层 `CMakeLists.txt` 的 `project(... VERSION ...)` 读取版本，不单独维护发布脚本版本常量，确保产物目录、ZIP 名称和编译期 `APP_VERSION` 一致。
+
+## 内置 HTTP 抓包
+
+抓包模块由 `src/capture` 组成：
+
+- `HttpParser`：增量解析分片 Header、Content-Length、chunked 和连接关闭分隔响应，对 Header/Body 设置大小上限。
+- `CaptureProxyServer`：本地 HTTP 明文代理，转发绝对 URL，过滤 hop-by-hop 请求头，统计传输字节和耗时。
+- `ClientFingerprint`：根据客户端 UA、Codex/Claude 特殊 Header、路径和 SSE Content-Type 识别协议特征。
+- `CaptureTypes`、`HarExporter`：提供交换数据模型、SSE 事件和脱敏后的 HAR/JSON/Markdown 输出。
+- `CaptureDialog`：使用统一自绘 `DialogTitleBar`，文字使用 `LanguageManager::trKey`，与深色/浅色主题兼容。
+
+安全边界：只捕获用户主动配置到本地代理的流量，默认内存存储、默认脱敏、不注入进程、不进行 HTTPS 中间人解密。

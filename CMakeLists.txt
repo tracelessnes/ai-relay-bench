@@ -37,6 +37,13 @@ qt_add_executable(ai-relay-bench WIN32
     src/persistence/ResultRepository.cpp
     src/security/RedactionService.h
     src/security/RedactionService.cpp
+    src/capture/CaptureTypes.cpp
+    src/capture/HttpParser.cpp
+    src/capture/ClientFingerprint.cpp
+    src/capture/HarExporter.cpp
+    src/capture/CaptureProxyServer.cpp
+    src/ui/CaptureDialog.h
+    src/ui/CaptureDialog.cpp
     src/ui/MainWindow.h
     src/ui/MainWindow.cpp
     src/ui/TrendChart.h
@@ -76,6 +83,20 @@ qt_add_executable(ai-relay-bench-tests
 target_include_directories(ai-relay-bench-tests PRIVATE src)
 target_link_libraries(ai-relay-bench-tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME core-tests COMMAND ai-relay-bench-tests)
+
+qt_add_executable(ai-relay-bench-capture-tests
+    tests/tst_capture.cpp
+    src/security/RedactionService.cpp
+    src/protocol/SseDecoder.cpp
+    src/capture/CaptureTypes.cpp
+    src/capture/HttpParser.cpp
+    src/capture/ClientFingerprint.cpp
+    src/capture/HarExporter.cpp
+    src/capture/CaptureProxyServer.cpp
+)
+target_include_directories(ai-relay-bench-capture-tests PRIVATE src)
+target_link_libraries(ai-relay-bench-capture-tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME capture-tests COMMAND ai-relay-bench-capture-tests)
 
 qt_add_executable(ai-relay-bench-integration-tests
     tests/tst_integration.cpp

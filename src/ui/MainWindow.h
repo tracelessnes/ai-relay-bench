@@ -30,6 +30,7 @@ private slots:
     void filterResults(const QString&);
     void showSettings();
     void scanSite();
+    void showCaptureDialog();
     void toggleTheme();
     void retranslateUi();
 protected:

@@ -152,3 +152,22 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
 - 脱敏服务对 JSON、SSE、请求头、嵌套字段和导出路径的覆盖
 
 > 注意：发布包和自动测试不包含任何真实 API Key。不同中转站仍可能存在私有鉴权、WAF 或非标准协议差异，可通过扫描结果、自定义请求头和已脱敏的原始响应查看器进一步诊断。
+
+## 内置 HTTP 抓包
+
+V1.2.0 包含内置抓包分析器，可用于调试 CLI 工具和中转站之间的 HTTP 明文代理请求。
+
+- 默认监听 `127.0.0.1:8765`，在主界面点击“Capture Analysis / 抓包分析”打开。
+- 支持请求头、请求体、响应头、响应体、SSE 事件、延迟、传输字节和 HAR/JSON/Markdown 导出。
+- 自动识别 OpenAI、Claude、Claude Code、Codex CLI、Cherry Studio 和 ChatBox 客户端特征。
+- 默认自动脱敏 API Key、Bearer Token、Cookie 和密码，不会上传抓包数据。
+- 当前版本不做 HTTPS CONNECT MITM，对 CONNECT 请求返回 `501 Not Implemented`。
+
+CLI 工具可临时指向本地代理：
+
+```powershell
+$env:HTTP_PROXY = "http://127.0.0.1:8765"
+$env:HTTPS_PROXY = "http://127.0.0.1:8765"
+```
+
+请仅在有权调试的环境中抓包，并使用合成凭据进行回归测试。
